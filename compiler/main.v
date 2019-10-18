@@ -33,13 +33,11 @@ const (
 	TmpPath            = vtmp_path()
 )
 
-// TODO V was re-written in V before enums were implemented. Lots of consts need to be replaced with
-// enums.
-const (
-	MAC     = 0
-	LINUX   = 1
-	WINDOWS = 2
-)
+enum Os {
+	MAC
+	LINUX
+	WINDOWS
+}
 
 enum Pass {
 	// A very short pass that only looks at imports in the begginning of each file
@@ -63,7 +61,7 @@ enum Pass {
 struct V {
 mut:
 	build_mode BuildMode
-	os         int // the OS to build for
+	os         Os // the OS to build for
 	nofmt      bool // disable vfmt
 	out_name_c string // name of the temporary C file
 	files      []string // all V files that need to be parsed and compiled
@@ -93,7 +91,7 @@ fn main() {
 	args := os.args
 	// Print the version and exit.
 	if 'version' in args {
-		println2('V $Version')
+		println('V $Version')
 		return
 	}
 	if '-h' in args || '--help' in args || 'help' in args {
@@ -117,12 +115,14 @@ fn main() {
 	if args.contains('fmt') {
 		file := args.last()
 		if !os.file_exists(file) {
-			os.exit1('"$file" does not exist')
+			println('"$file" does not exist')
+			exit(1)
 		}
 		if !file.ends_with('.v') {
-			os.exit1('v fmt can only be used on .v files')
+			println('v fmt can only be used on .v files')
+			exit(1)
 		}
-		println2('vfmt is temporarily disabled')
+		println('vfmt is temporarily disabled')
 		return
 	}
 	// V with no args? REPL
@@ -138,7 +138,7 @@ fn main() {
 	// Generate the docs and exit
 	if args.contains('doc') {
 		// c.gen_doc_html_for_module(args.last())
-		os.exit('')
+		exit(0)
 	}
 	c.compile()
 }
@@ -381,8 +381,9 @@ string _STR_TMP(const char *fmt, ...) {
 		ret := os.system2(cmd)
 		if ret != 0 {
 			s := os.system(cmd)
-			println2(s)
-			os.exit1('ret not 0, exiting')
+			println(s)
+			println('ret not 0, exiting')
+			exit(1)
 		}
 	}
 }
@@ -415,8 +416,8 @@ fn (c mut V) cc() {
 	else if c.build_mode == DEFAULT_MODE {
 		libs = '$TmpPath/vlib/builtin.o'
 		if !os.file_exists(libs) {
-			println2('`builtin.o` not found')
-			exit('')
+			println('`builtin.o` not found')
+			exit(1)
 		}
 		for imp in c.table.imports {
 			if imp == 'webview' {
@@ -453,6 +454,8 @@ mut args := ''
 	// Output executable name
 	// else {
 	a << '-o $c.out_name'
+	// The C file we are compiling
+	a << '$TmpPath/$c.out_name_c'
 	// }
 	// Min macos version is mandatory I think?
 	if c.os == MAC {
@@ -464,8 +467,6 @@ mut args := ''
 	if c.os == MAC {
 		a << '-x objective-c'
 	}
-	// The C file we are compiling
-	a << '$TmpPath/$c.out_name_c'
 	// Without these libs compilation will fail on Linux
 	if c.os == LINUX && c.build_mode != BUILD {
 		a << '-lm -ldl -lpthread'
@@ -487,7 +488,7 @@ mut args := ''
 	res := os.system(cmd)
 	// println('C OUTPUT:')
 	if res.contains('error: ') {
-		println2(res)
+		println(res)
 		panic('clang error')
 	}
 	// Link it if we are cross compiling and need an executable
@@ -506,7 +507,7 @@ mut args := ''
 		'/usr/lib/x86_64-linux-gnu/crtn.o')
 		println(ress)
 		if ress.contains('error:') {
-			os.exit1('')
+			os.exit(1)
 		}
 		println('linux cross compilation done. resulting binary: "$c.out_name"')
 	}
@@ -587,7 +588,8 @@ fn (c mut V) add_user_v_files() {
 		}
 	}
 	if user_files.len == 0 {
-		exit('No input .v files')
+		println('No input .v files')
+		exit(1)
 	}
 	if c.is_verbose {
 		c.log('user_files:')
@@ -705,7 +707,8 @@ fn new_v(args[]string) *V {
 	is_test := dir.ends_with('_test.v')
 	is_script := dir.ends_with('.v')
 	if is_script && !os.file_exists(dir) {
-		exit('`$dir` does not exist')
+		println('`$dir` does not exist')
+		exit(1)
 	}
 	// No -o provided? foo.v => foo
 	if out_name == 'a.out' && dir.ends_with('.v') {
@@ -793,9 +796,9 @@ fn new_v(args[]string) *V {
 }
 
 fn run_repl() []string {
-	println2('V $Version')
-	println2('Use Ctrl-D to exit')
-	println2('For now you have to use println() to print values, this will be fixed soon\n')
+	println('V $Version')
+	println('Use Ctrl-D to exit')
+	println('For now you have to use println() to print values, this will be fixed soon\n')
 	file := TmpPath + '/vrepl.v'
 	mut lines := []string
 	for {
@@ -814,7 +817,7 @@ fn run_repl() []string {
 			mut v := new_v( ['v', '-repl', file])
 			v.compile()
 			s := os.system(TmpPath + '/vrepl')
-			println2(s)
+			println(s)
 		}
 		else {
 			lines << line
