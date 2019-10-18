@@ -9,8 +9,6 @@ Refer the project [vlang](https://github.com/vlang/v)
 
 # The V Programming Language
 
-V is going to be released on June 22, 2019 at 18:00 UTC. 
-
 https://vlang.io
 
 Documentation: https://vlang.io/docs
@@ -70,12 +68,12 @@ cc -w -o vc v.c           # Build it with Clang or GCC
 ./vc -o v .               # Use the resulting V binary to build V from V source
 ```
 
-That's it! Now you have a V executable at `~/v/compiler/v`.
+That's it! Now you have a V executable at `~/code/v/compiler/v`.
 
 You can create a symlink so that it's globally available:
 
 ```
-sudo ln -s $HOME/v/compiler/v /usr/local/bin/v
+sudo ln -s $HOME/code/v/compiler/v /usr/local/bin/v
 ```
 
 ### Windows
