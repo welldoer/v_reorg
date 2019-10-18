@@ -7,7 +7,7 @@ Refer the project [vlang](https://github.com/vlang/v)
 =========================================================================
 
 
-# The V Programming Language
+# The V Programming Language 0.0.12
 
 https://vlang.io
 
@@ -63,9 +63,12 @@ The rest of the directories are vlib modules: `builtin/` (strings, arrays, maps)
 mkdir -p ~/code && cd ~/code  # ~/code directory has to be used (it's a temporary limitation)
 git clone https://github.com/vlang/v
 cd v/compiler
+make
+
+# Or build without make:
 wget https://vlang.io/v.c # Download the V compiler's source translated to C
 cc -std=c11 -w -o vc v.c  # Build it with Clang or GCC
-./vc -o v .               # Use the resulting V binary to build V from V source
+./vc -o v . && rm vc      # Use the resulting V binary to build V from V source, delete the old compiler
 ./v -o v .                # Bootstrap the compiler to make sure it works
 ```
 
