@@ -15,6 +15,8 @@ Documentation: https://vlang.io/docs
 
 Twitter: https://twitter.com/v_language
 
+Installing V: https://github.com/vlang/v#installing-v-from-source
+
 
 ## Code Structure
 
@@ -116,9 +118,12 @@ v hello_world.v && ./hello_world # or simply
 v run hello_world.v              # This builds the program and runs it right away
 
 v word_counter.v && ./word_counter cinderella.txt
-v news_fetcher.v && ./news_fetcher
-v tetris.v && ./tetris
+v run news_fetcher.v 
+v run tetris.v
 ```
+
+<img src='https://raw.githubusercontent.com/vlang/v/master/examples/tetris/screenshot.png' width=300>
+
 
 In order to build Tetris and anything else using the graphics module, you will need to install glfw and freetype.
 
