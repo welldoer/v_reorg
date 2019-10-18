@@ -5,13 +5,13 @@ module time
 #include <math.h>
 #include <mach/mach_time.h>
 // in ms
-fn ticks() double {
+fn ticks() f64 {
 	// #return glfwGetTime() * 1000.0;
 	// return glfw.get_time() * double(1000.0)
 	t := i64(C.mach_absolute_time())
 	# Nanoseconds elapsedNano = AbsoluteToNanoseconds( *(AbsoluteTime *) &t );
 	# return (double)(* (uint64_t *) &elapsedNano) / 1000000;
-	return double(0)
+	return f64(0)
 }
 
 fn sleep(seconds int) {
