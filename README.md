@@ -60,7 +60,7 @@ The rest of the directories are vlib modules: `builtin/` (strings, arrays, maps)
 ### Linux and macOS
 
 ```bash
-mkdir -p ~/code && cd ~/code  # ~/code directory has to be used (it's a temporary limitation)
+mkdir ~/code && cd ~/code  # ~/code directory has to be used (it's a temporary limitation)
 git clone https://github.com/vlang/v
 cd v/compiler
 make
@@ -69,15 +69,20 @@ make
 wget https://vlang.io/v.c # Download the V compiler's source translated to C
 cc -std=c11 -w -o vc v.c  # Build it with Clang or GCC
 ./vc -o v . && rm vc      # Use the resulting V binary to build V from V source, delete the old compiler
-./v -o v .                # Bootstrap the compiler to make sure it works
 ```
 
 That's it! Now you have a V executable at `~/code/v/compiler/v`.
 
+Bootstrap the compiler to make sure it works:
+
+```
+./v -o v .
+```
+
 You can create a symlink so that it's globally available:
 
 ```
-sudo ln -s $HOME/code/v/compiler/v /usr/local/bin/v
+sudo ln -s ~/code/v/compiler/v /usr/local/bin/v
 ```
 
 ### Windows
