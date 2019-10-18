@@ -94,6 +94,7 @@ fn main() {
 	}
 	if '-h' in args || '--help' in args || 'help' in args {
 		println(HelpText)
+		return
 	}
 	// TODO quit if the compiler is too old 
 	// u := os.file_last_mod_unix('/var/tmp/alex')
@@ -512,7 +513,7 @@ fn (c &V) v_files_from_dir(dir string) []string {
 	mut res := []string
 	mut files := os.ls(dir)
 	if !os.file_exists(dir) {
-		panic('$dir doesnt exist')
+		panic('$dir doesn\'t exist')
 	}
 	if c.is_verbose {
 		println('v_files_from_dir ("$dir")')
@@ -832,6 +833,9 @@ v -prod file.v
 
 - To specify the executable\'s name:
 v -o program file.v 
+
+- To execute a program without creating an executable:
+v run file.v
 '
 )
 
