@@ -64,7 +64,7 @@ mkdir -p ~/code && cd ~/code  # ~/code directory has to be used (it's a temporar
 git clone https://github.com/vlang/v
 cd v/compiler
 wget https://vlang.io/v.c # Download the V compiler's source translated to C
-cc -w -o vc v.c           # Build it with Clang or GCC
+cc -std=c11 -w -o vc v.c  # Build it with Clang or GCC
 ./vc -o v .               # Use the resulting V binary to build V from V source
 ./v -o v .                # Bootstrap the compiler to make sure it works
 ```
@@ -105,7 +105,7 @@ Now if you want, you can start tinkering with the compiler. If you introduce a b
 
 ```
 v hello_world.v && ./hello_world # or simply
-v run hello_world.v              # This runs the program, but doesn't create the executable
+v run hello_world.v              # This builds the program and runs it right away
 
 v word_counter.v && ./word_counter cinderella.txt
 v news_fetcher.v && ./news_fetcher
