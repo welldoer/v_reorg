@@ -7,7 +7,7 @@ Refer the project [vlang](https://github.com/vlang/v)
 =========================================================================
 
 
-# The V Programming Language 0.0.12
+# The V Programming Language 0.1.0
 
 https://vlang.io
 
@@ -19,6 +19,23 @@ Discord (primary community): https://discord.gg/n7c74HM
 
 Installing V: https://github.com/vlang/v#installing-v-from-source
 
+
+## Key Features of V
+
+- Simplicity: the language can be learned in half an hour, less if you already know Go
+- Fast compilation: ~100k loc right now, ~1.2 million loc once x64 generation is mature enough
+- Easy to develop: V compiles itself in less than a second
+- Performance: within 5% of C
+- Safety: no null, no globals, no UB, immutability by default
+- C to V translation
+- Hote code reloading
+- Powerful UI and graphics libraries
+- Easy cross compilation
+- REPL
+
+V 1.0 release is planned for December 2019.
+
+GitHub marks V's code as written in Go. It's actually writtein in V, GitHub doesn't support the language yet.
 
 ## Code Structure
 
