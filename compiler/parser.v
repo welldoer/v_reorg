@@ -249,6 +249,9 @@ fn (p mut Parser) parse() {
 				} 
 				if p.cur_fn.name == '' {
 					p.cur_fn = MainFn 
+					if p.is_repl {
+						p.cur_fn.clear_vars()
+					}
 				} 
 				start := p.cgen.lines.len
 				p.statement(true)
@@ -2088,11 +2091,14 @@ fn (p mut Parser) typ_to_fmt(typ string) string {
 	case 'u32': return '%d'
 	case 'f64', 'f32': return '%f'
 	case 'i64': return '%lld'
-	case 'byte*': return '%s'
+	case 'byte*', 'byteptr': return '%s'
 		// case 'array_string': return '%s'
 		// case 'array_int': return '%s'
 	case 'void': p.error('cannot interpolate this value')
 	default:
+		if typ.ends_with('*') {
+			return '%p' 
+		} 
 		p.error('unhandled sprintf format "$typ" ')
 	}
 	return ''
@@ -2624,46 +2630,16 @@ fn (p mut Parser) chash() {
 			p.genln('#include $file')
 		}
 	}
-	else if is_c_pre(hash) {
-		// Skip not current OS hack
-		if hash.starts_with('ifdef') {
-			os := hash.right(6).trim_space()
-			// println('ifdef "$os" $p.scanner.line_nr')
-			if os == 'linux' && p.os != LINUX {
-				// println('linux ifdef skip')
-				for p.tok != EOF {
-					if p.tok == HASH && p.lit.contains('else') || p.lit.contains('endif') {
-						break
-					}
-					// println('skipping')
-					p.next()
-				}
-			}
-		}
-		// Move defines on top (like old gdefine)
-		if hash.contains('define') {
-			p.cgen.includes << '#$hash'
-		}
-		else {
-			p.genln('#$hash')
-		}
+	else if hash.contains('define') { 
+		// Move defines on top 
+		p.cgen.includes << '#$hash'
 	}
 	else {
 		if !p.can_chash {
 			p.error('bad token `#` (embedding C code is no longer supported)')
 		}
-		//println('HASH!!! $p.file_name $p.scanner.line_nr')
-		if p.cur_fn.name == '' {
-			// p.error('# outside of fn')
-		}
 		p.genln(hash)
 	}
-}
-
-fn is_c_pre(hash string) bool {
-	return hash.contains('ifdef') || hash.contains('define') ||
-	hash.contains('endif') || hash.contains('elif') ||
-	hash.contains('ifndef') || (hash.contains('else') && !hash.contains('{'))
 }
 
 fn (p mut Parser) if_st(is_expr bool) string {
