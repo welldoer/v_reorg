@@ -84,8 +84,8 @@ fn (f mut Fn) register_var(v Var) {
 	}
 	else {
 		f.local_vars[f.var_idx] = new_var
-		f.var_idx++
 	}
+	f.var_idx++
 }
 
 // vlib header file?
@@ -531,7 +531,7 @@ fn (p mut Parser) fn_call(f Fn, method_ph int, receiver_var, receiver_type strin
 		if !receiver.is_mut && receiver_type.contains('*') {
 			method_call += '*'
 		}
-		mut cast = ''
+		mut cast := ''
 		// Method returns (void*) => cast it to int, string, user etc
 		// number := *(int*)numbers.first()
 		if f.typ == 'void*' {
