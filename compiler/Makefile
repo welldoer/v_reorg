@@ -7,8 +7,9 @@ v: v.c
 v.c:
 	curl -Os https://raw.githubusercontent.com/vlang/vc/master/v.c
 
-test:
+test: v
 	find .. -name '*_test.v' -print0 | xargs -0 -n1 ./v
+	find ../examples -name '*.v' -print0 | xargs -0 -n1 ./v
 
 clean:
 	-rm v

@@ -290,3 +290,4 @@ fn test_all_after() {
 	q := s.all_after('fn ')
 	assert q == 'hello'
 }
+
