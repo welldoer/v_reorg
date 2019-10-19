@@ -25,7 +25,7 @@ fn decode(data string) string {
 	str_len := L / 4 * 3 + pad
 	mut str := malloc(str_len + 2)
 	mut j := 0
-	for i := 0; i < L; i += 4 {
+	for i := 0; i < L; i = i+4 {
 		n := (Index[p[i]] << 18) | (Index[p[i + 1]] << 12) |
 			(Index[p[i + 2]] << 6) | (Index[p[i + 3]])
 		str[j] = n >> 16
