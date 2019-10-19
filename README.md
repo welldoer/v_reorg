@@ -7,7 +7,7 @@ Refer the project [vlang](https://github.com/vlang/v)
 =========================================================================
 
 
-# The V Programming Language 0.1.0
+# The V Programming Language 0.1.1
 
 https://vlang.io
 
@@ -81,24 +81,19 @@ The rest of the directories are vlib modules: `builtin/` (strings, arrays, maps)
 ### Linux and macOS
 
 ```bash
-# ~/code directory has to be used (it's a temporary limitation)
-git clone https://github.com/vlang/v ~/code/v
-cd ~/code/v/compiler
+# You can clone V anywhere
+git clone https://github.com/vlang/v
+cd v/compiler
 make
 
 # Or build without make:
-wget https://vlang.io/v.c # Download the V compiler's source translated to C
+wget https://vlang.io/v.c   # Download the V compiler's source translated to C
 cc -std=gnu11 -w -o vc v.c  # Build it with Clang or GCC
-./vc -o v . && rm vc      # Use the resulting V binary to build V from V source, delete the old compiler
+./vc -o v . && rm vc        # Use the resulting V binary to build V from V source, delete the old compiler
+./v -o v .                  # Bootstrap the compiler to make sure it works
 ```
 
-That's it! Now you have a V executable at `~/code/v/compiler/v`.
-
-Bootstrap the compiler to make sure it works:
-
-```
-./v -o v .
-```
+That's it! Now you have a V executable at `v/compiler/v`.
 
 You can create a symlink so that it's globally available:
 
