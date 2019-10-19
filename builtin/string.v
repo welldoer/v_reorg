@@ -138,14 +138,12 @@ pub fn (s string) replace(rep, with string) string {
 	return tos(b, new_len)
 }
 
-// TODO `.int()` ?
-pub fn (s string) to_i() int {
+fn (s string) int() int {
 	return C.atoi(s.str)
 }
 
-// TODO `.f32()`
-fn (s string) to_float() float {
-	return C.atof(s.str)
+fn (s string) f32() f32 {
+	return C.atof(s.str) 
 }
 
 // ==
