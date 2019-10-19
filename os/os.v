@@ -386,6 +386,24 @@ fn print_c_errno() {
 	# printf("errno=%d err='%s'\n", errno, strerror(errno));
 }
 
+
+pub fn ext(path string) string {
+	pos := path.last_index('.')
+	if pos == -1 {
+		return ''
+	}
+	return path.right(pos)
+}
+
+fn path_sans_ext(path string) string {
+	pos := path.last_index('.')
+	if pos == -1 {
+		return path
+	}
+	return path.left(pos)
+}
+
+
 pub fn basedir(path string) string {
 	pos := path.last_index('/')
 	if pos == -1 {
