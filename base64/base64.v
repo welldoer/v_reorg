@@ -14,7 +14,7 @@ const (
 	47, 48, 49, 50, 51]
 )
 
-fn decode(data string) string {
+pub fn decode(data string) string {
 	p := data.cstr()
 	len := data.len
 	mut pad := 0
