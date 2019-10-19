@@ -230,6 +230,10 @@ fn (p mut Parser) parse() {
 			p.cgen.consts << g
 		case EOF:
 			p.log('end of parse()')
+			if p.is_script && !p.is_test {
+				p.cur_fn = MainFn
+				p.check_unused_variables()
+			}
 			if true && !p.first_run() && p.fileis('test') {
 				out := os.create('/var/tmp/fmt.v')
 				out.appendln(p.scanner.fmt_out.str())
@@ -1193,7 +1197,7 @@ fn (p mut Parser) name_expr() string {
 	hack_lit := p.lit
 	// amp
 	ptr := p.tok == AMP
-	deref := p.tok == MUL
+	mut deref := p.tok == MUL
 	if ptr || deref {
 		p.next()
 	}
@@ -1237,6 +1241,7 @@ fn (p mut Parser) name_expr() string {
 	// Variable
 	v := p.cur_fn.find_var(name)
 	if v.name.len != 0 {
+		deref = deref || (v.is_arg && v.is_mut && is_mutable_type(v.typ))
 		if ptr {
 			p.gen('& /*vvar*/ ')
 		}
