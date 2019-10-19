@@ -8,7 +8,7 @@ import os
 import time
 
 const (
-	Version = '0.1.2'
+	Version = '0.1.3'
 )
 
 // TODO no caps
@@ -756,7 +756,6 @@ fn new_v(args[]string) *V {
 	'int.v',
 	'utf8.v',
 	'map.v',
-	'smap.v',
 	'option.v',
 	'string_builder.v',
 	]
@@ -782,7 +781,15 @@ fn new_v(args[]string) *V {
 			println('Setting VROOT to "$lang_dir".')
 			os.write_file(TmpPath + '/VROOT', lang_dir)
 		} else {
-			println('Please do it from "v/compiler" directory.')
+			println('V repo not found. Cloning...') 
+			os.mv('v', 'v.bin') 
+			os.system('git clone https://github.com/vlang/v') 
+			if !os.dir_exists('v') {
+				println('failed to clone github.com/vlang/v') 
+				exit(1) 
+			} 
+			os.mv('v.bin', 'v/compiler/v') 
+			println('Re-launch V from v/compiler') 
 			exit(1) 
 		}
 	} 
