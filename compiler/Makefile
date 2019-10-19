@@ -5,7 +5,7 @@ v: v.c
 	./v -o v .
 
 v.c:
-	wget https://raw.githubusercontent.com/vlang/vc/master/v.c
+	curl -Os https://raw.githubusercontent.com/vlang/vc/master/v.c
 
 test:
 	find .. -name '*_test.v' -print0 | xargs -0 -n1 ./v
