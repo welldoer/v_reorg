@@ -44,7 +44,7 @@ pub fn decode(data string) string {
 		}
 	}
 	str[str_len + 1] = `\0`
-	return tos(str, str_len+2)
+	return tos(str, str_len+1)
 }
 
 const (
