@@ -35,7 +35,7 @@ Installing V: https://github.com/vlang/v#installing-v-from-source
 - Easy cross compilation
 - REPL
 
-V 1.0 release is planned for December 2019.
+V 1.0 release is planned for December 2019. Right now V is in an alpha stage. 
 
 ## Notes
 
@@ -63,7 +63,7 @@ You'll need Clang or GCC. On macOS run `xcode-select --install` if you don't hav
 ```bash
 # You can clone V anywhere
 git clone https://github.com/vlang/v
-cd v/compiler
+cd v
 make
 ```
 Or build without make:
@@ -75,20 +75,18 @@ cc -std=gnu11 -w -o v v.c  # Build it with Clang or GCC
 ./v -o v .                 # Build the compiler again to make sure it works
 ```
 
-That's it! Now you have a V executable at `v/compiler/v`.
+That's it! Now you have a V executable at `[path to V repo]/v`.
 
 You can create a symlink so that it's globally available:
 
 ```
-sudo ln -s [path to V repo]/compiler/v /usr/local/bin/v
+sudo ln -s [path to V repo]/v /usr/local/bin/v
 ```
 
 V is being constantly updated. To update V, simply run
 
 ```
 git pull origin master
-cd compiler/
-make clean
 make
 ```
 
@@ -108,7 +106,7 @@ Make sure the `C:/mingw-w64/bin` directory is in system's PATH.
 ```bash
 # You can clone V anywhere
 git clone https://github.com/vlang/v
-cd v/compiler
+cd v
 # Download the V compiler's source translated to C
 curl -sO https://raw.githubusercontent.com/vlang/vc/master/v.c
 gcc -std=gnu11 -w -o v.exe v.c  # Build it with GCC

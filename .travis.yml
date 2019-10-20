@@ -2,6 +2,7 @@ language: c
 matrix:
   include:
     - os: linux
+      dist: xenial
       sudo: required
       addons:
         apt:
@@ -30,7 +31,6 @@ script:
       sudo unlink /usr/bin/gcc && sudo ln -s /usr/bin/gcc-5 /usr/bin/gcc
     fi
   - export VROOT=$(pwd)
-  - cd ./compiler
   - make
   - make test
 
