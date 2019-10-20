@@ -391,7 +391,7 @@ fn (p mut Parser) type_decl() {
 	// so specify "struct"
 	_struct := if !parent.contains('[') && !parent.starts_with('fn ') && !p.table.known_type(parent){'struct'} else { ''}
 	p.gen_typedef('typedef $_struct $nt_pair; // type alias name="$name" parent="$parent"')
-	p.table.register_type_with_parent(name, parent)
+	p.register_type_with_parent(name, parent)
 }
 
 fn (p mut Parser) interface_method(field_name, receiver string) &Fn {
@@ -1066,7 +1066,7 @@ fn (p mut Parser) assign_statement(v Var, ph int, is_map bool) {
 	p.log('assign_statement() name=$v.name tok=')
 	tok := p.tok
 	if !v.is_mut && !v.is_arg && !p.pref.translated && !v.is_global{
-		p.error('`$v.name` is imkey_mut')
+		p.error('`$v.name` is immutable')
 	}
 	is_str := v.typ == 'string'
 	switch tok {
@@ -1488,7 +1488,7 @@ fn (p mut Parser) var_expr(v Var) string {
 	// a++ and a--
 	if p.tok == .inc || p.tok == .dec {
 		if !v.is_mut && !v.is_arg && !p.pref.translated {
-			p.error('`$v.name` is imkey_mut')
+			p.error('`$v.name` is immutable')
 		}
 		if typ != 'int' {
 			if !p.pref.translated && !is_number_type(typ) {
@@ -1567,7 +1567,7 @@ fn (p mut Parser) dot(str_typ string, method_ph int) string {
 		modifying := next.is_assign() || next == .inc || next == .dec
 		is_vi := p.fileis('vi')
 		if !p.builtin_pkg && !p.pref.translated && modifying && !field.is_mut && !is_vi {
-			p.error('cannot modify imkey_mut field `$field_name` (type `$typ.name`)')
+			p.error('cannot modify immutable field `$field_name` (type `$typ.name`)')
 		}
 		if !p.builtin_pkg && p.mod != typ.mod {
 		}
@@ -1582,7 +1582,7 @@ fn (p mut Parser) dot(str_typ string, method_ph int) string {
 		// Don't allow `str.len = 0`
 		if field.access_mod == .public && !p.builtin_pkg && p.mod != typ.mod {
 			if !field.is_mut && !p.pref.translated && modifying {
-				p.error('cannot modify public imkey_mut field `$field_name` (type `$typ.name`)')
+				p.error('cannot modify public immutable field `$field_name` (type `$typ.name`)')
 			}
 		}
 		p.gen(dot + field_name)
@@ -1725,7 +1725,7 @@ fn (p mut Parser) index_expr(typ string, fn_ph int) string {
 	p.tok == .or_assign || p.tok == .and_assign || p.tok == .righ_shift_assign ||
 	p.tok == .left_shift_assign {
 		if is_indexer && is_str && !p.builtin_pkg {
-			p.error('strings are imkey_mut')
+			p.error('strings are immutable')
 		}
 		assign_pos := p.cgen.cur_line.len
 		p.assigned_type = typ
@@ -1822,7 +1822,7 @@ fn (p mut Parser) expression() string {
 			p.gen(', (')
 			// Imkey_mut? Can we push?
 			if !p.expr_var.is_mut && !p.pref.translated {
-				p.error('`$p.expr_var.name` is imkey_mut (can\'t <<)')
+				p.error('`$p.expr_var.name` is immutable (can\'t <<)')
 			}
 			expr_type := p.expression() 
 			// Two arrays of the same type? 
@@ -2135,7 +2135,7 @@ fn (p mut Parser) char_expr() {
 }
 
 
-fn (p mut Parser) typ_to_fmt(typ string) string {
+fn (p mut Parser) typ_to_fmt(typ string, level int) string {
 	t := p.table.find_type(typ)
 	if t.is_enum { 
 		return '%d'
@@ -2155,6 +2155,9 @@ fn (p mut Parser) typ_to_fmt(typ string) string {
 			return '%p' 
 		} 
 	}
+	if t.parent != '' && level == 0 { 
+		return p.typ_to_fmt(t.parent, level+1) 
+	} 
 	return ''
 }
 
@@ -2227,7 +2230,7 @@ fn (p mut Parser) string_expr() {
 			p.next()
 		}
 		else {
-			f := p.typ_to_fmt(typ) 
+			f := p.typ_to_fmt(typ, 0) 
 			if f == '' { 
 				p.error('unhandled sprintf format "$typ" ')
 			} 
@@ -2301,7 +2304,7 @@ fn (p mut Parser) array_init() string {
 					name := p.check_name()
 					if p.table.known_type(name) {
 						p.cgen.cur_line = ''
-						p.gen('{} /* arkek init*/')
+						p.gen('{}')
 						return '[$lit]$name'
 					}
 					else {
