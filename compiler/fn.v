@@ -261,7 +261,7 @@ fn (p mut Parser) fn_decl() {
 	// println('FN DECL $f.name typ=$f.typ str_args="$str_args"')
 	// Special case for main() args
 	if f.name == 'main' && !has_receiver {
-		if str_args != '' {
+		if str_args != '' || typ != 'void' {
 			p.error('fn main must have no arguments and no return values')
 		}
 		typ = 'int'
@@ -503,7 +503,7 @@ fn (p mut Parser) async_fn_call(f Fn, method_ph int, receiver_var, receiver_type
 }
 
 fn (p mut Parser) fn_call(f Fn, method_ph int, receiver_var, receiver_type string) {
-	if !f.is_public && !f.is_c && !p.pref.is_test && f.pkg != p.pkg  { 
+	if !f.is_public &&  !f.is_c && !p.pref.is_test && !f.is_interface && f.pkg != p.pkg  { 
 		p.error('function `$f.name` is private')
 	}
 	p.calling_c = f.is_c
