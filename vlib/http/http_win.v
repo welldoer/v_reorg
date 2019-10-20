@@ -20,15 +20,16 @@ import const (
 	INTERNET_SERVICE_HTTP
 )
 
-fn (req &Request) do() Response {
+pub fn (req &Request) do() Response {
 	emptyresp := Response{}
 	mut url := req.url
 	//println('\n\nhttp.do() WIN URL="$url" TYP=$req.typ data="$req.data" headers.len=req.headers.len"')
 	//println(req.headers)
 	is_ssl := req.url.starts_with('https://')
 	//println('is ssl=$is_ssl')
-	mut pos := url.index('/')
-	url = url.right(pos + 2)
+	mut pos := url.index('://')
+	if pos == -1 {return emptyresp}
+	url = url.right(pos + 3)
 	mut host := url
 	mut path := '/'
 	pos = url.index('/')
@@ -42,10 +43,7 @@ fn (req &Request) do() Response {
 	mut headers := ''
 	mut resp_headers := ''
 	// for header in req.headers {
-	for entry in req.headers.entries {
-		// headers += '$header\r\n'
-		key := entry.key
-		val := req.headers[key]
+	for key, val in req.headers {
 		headers += '$key: $val\r\n'
 	}
 	if req.typ == 'POST' {

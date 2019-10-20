@@ -543,11 +543,21 @@ fn type_default(typ string) string {
 	}
 	// Default values for other types are not needed because of mandatory initialization
 	switch typ {
-	case 'int': return '0'
-	case 'string': return 'tos("", 0)'
-	case 'void*': return '0'
-	case 'byte*': return '0'
 	case 'bool': return '0'
+	case 'string': return 'tos("", 0)'
+	case 'i8': return '0'
+	case 'i16': return '0'
+	case 'i32': return '0'
+	case 'u8': return '0'
+	case 'u16': return '0'
+	case 'u32': return '0'
+	case 'byte': return '0'
+	case 'int': return '0'
+	case 'rune': return '0'
+	case 'f32': return '0.0'
+	case 'f64': return '0.0'
+	case 'byteptr': return '0'
+	case 'voidptr': return '0'
 	}
 	return '{}' 
 	return ''
@@ -565,8 +575,7 @@ fn (t &Table) is_interface(name string) bool {
 
 // Do we have fn main()?
 fn (t &Table) main_exists() bool {
-	for entry in t.fns.entries { 
-		f := t.fns[entry.key] 
+	for _, f in t.fns { 
 		if f.name == 'main' {
 			return true
 		}
@@ -696,11 +705,11 @@ fn (fit mut FileImportTable) register_import(mod string) {
 }
 
 fn (fit mut FileImportTable) register_alias(alias string, mod string) {
-	if !fit.imports.exists(alias) {
-		fit.imports[alias] = mod
-	} else {
-		panic('Cannot import $mod as $alias: import name $alias already in use in "${fit.file_path}".')
-	}
+	if fit.imports.exists(alias) {
+		panic('cannot import $mod as $alias: import name $alias already in use in "${fit.file_path}".')
+		return 
+	} 
+	fit.imports[alias] = mod
 }
 
 fn (fit &FileImportTable) known_alias(alias string) bool {
@@ -708,10 +717,10 @@ fn (fit &FileImportTable) known_alias(alias string) bool {
 }
 
 fn (fit &FileImportTable) is_aliased(mod string) bool {
-	for i in fit.imports.keys() {
-		if fit.imports[i] == mod {
-			return true
-		}
+	for _, val in fit.imports { 
+		if val == mod {
+			return true 
+		} 
 	}
 	return false
 }
