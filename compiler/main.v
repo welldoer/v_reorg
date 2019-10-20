@@ -75,7 +75,7 @@ mut:
 	is_prof    bool // benchmark every function
 	translated bool // `v translate doom.v` are we running V code translated from C? allow globals, ++ expressions, etc
 	obfuscate  bool // `v -obf program.v`, renames functions to "f_XXX"
-	lang_dir   string // "~/code/v"
+	lang_dir   string // path to V repo
 	is_verbose bool // print extra information with `v.log()`
 	is_run     bool // `v run program.v`
 	is_play    bool // playground mode
@@ -823,7 +823,7 @@ fn new_v(args []string) *V {
 			files << f
 		}
 	}
-	obfuscate := args.contains('-obf')
+	obfuscate := args.contains('-obf') 
 	return &V {
 		os: _os
 		out_name: out_name
@@ -839,7 +839,7 @@ fn new_v(args []string) *V {
 		is_play: args.contains('play')
 		is_prod: args.contains('-prod')
 		is_verbose: args.contains('-verbose')
-		obfuscate: obfuscate
+		obfuscate: args.contains('-obf') 
 		is_prof: args.contains('-prof')
 		is_live: args.contains('-live')
 		sanitize: args.contains('-sanitize')
