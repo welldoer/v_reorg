@@ -137,7 +137,10 @@ fn (s Scanner) has_gone_over_line_end() bool {
 fn (s mut Scanner) skip_whitespace() {
 	for s.pos < s.text.len && is_white(s.text[s.pos]) {
 		if is_nl(s.text[s.pos]) {
-			s.line_nr++
+			// Count \r\n as one line 
+			if !(s.text[s.pos] == `\n` && s.pos > 0 && s.text[s.pos-1] == `\r`) { 
+				s.line_nr++
+			} 
 			if s.is_fmt {
 				return
 			}
@@ -162,8 +165,7 @@ fn (s mut Scanner) cao_change(operator string) {
 	s.text = s.text.substr(0, s.pos - operator.len) + ' = ' + s.get_var_name(s.pos - operator.len) + ' ' + operator + ' ' + s.text.substr(s.pos + 1, s.text.len)
 }
 
-fn (s mut Scanner) scan() 
-ScanRes {
+fn (s mut Scanner) scan() ScanRes {
 	// if s.file_path == 'd.v' {
 	// println('\nscan()')
 	// }
