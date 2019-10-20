@@ -244,11 +244,9 @@ fn (p mut Parser) fn_decl() {
 		typ = p.get_type()
 	}
 	// Translated C code can have empty functions (just definitions)
-	is_fn_header := !is_c && !is_sig && (p.pref.translated || p.pref.is_test) &&
-	(p.tok != .lcbr)// || (p.tok == .name && p.peek() != .lcbr))
+	is_fn_header := !is_c && !is_sig && (p.pref.translated || p.pref.is_test) &&	p.tok != .lcbr 
 	if is_fn_header {
 		f.is_decl = true
-		// println('.key_goT fn header $f.name')
 	}
 	// { required only in normal function declarations
 	if !is_c && !is_sig && !is_fn_header {
@@ -509,13 +507,6 @@ fn (p mut Parser) fn_call(f Fn, method_ph int, receiver_var, receiver_type strin
 		p.error('function `$f.name` is private')
 	}
 	p.calling_c = f.is_c
-	is_print := p.pref.is_prod &&// Hide prints only in prod
-	!p.pref.is_test &&
-	!p.builtin_pkg &&// Allow prints in builtin  pkgs
-	f.is_c && f.name == 'printf'
-	if !p.cgen.nogen {
-		p.cgen.nogen = is_print
-	}
 	cgen_name := p.table.cgen_name(f)
 	// if p.pref.is_prof {
 	// p.cur_fn.called_fns << cgen_name
@@ -557,9 +548,6 @@ fn (p mut Parser) fn_call(f Fn, method_ph int, receiver_var, receiver_type strin
 	p.fn_call_args(f)
 	p.gen(')')
 	p.calling_c = false
-	if is_print {
-		p.cgen.nogen = false
-	}
 	// println('end of fn call typ=$f.typ')
 }
 
