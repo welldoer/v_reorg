@@ -239,7 +239,10 @@ fn (p mut Parser) parse() {
 				p.check_unused_variables()
 			}
 			if false && !p.first_run() && p.fileis('main.v') {
-				out := os.create('/var/tmp/fmt.v')
+				out := os.create('/var/tmp/fmt.v') or {
+					panic('failed to create fmt.v') 
+					return 
+} 
 				out.writeln(p.scanner.fmt_out.str())
 				out.close()
 			}
@@ -390,6 +393,25 @@ fn (p mut Parser) type_decl() {
 	p.table.register_type_with_parent(name, parent)
 }
 
+fn (p mut Parser) interface_method(field_name, receiver string) &Fn {
+	mut method := &Fn {
+		name: field_name
+		is_interface: true
+		is_method: true
+		receiver_typ: receiver
+	}
+	p.log('is interface. field=$field_name run=$p.run')
+	p.fn_args(mut method)
+	if p.scanner.has_gone_over_line_end() {
+		method.typ = 'void'
+	} else {
+		method.typ = p.get_type()// method return type
+		p.fspace()
+		p.fgenln('')
+	}
+	return method
+}
+
 // also unions and interfaces
 fn (p mut Parser) struct_decl() {
 	// Attribute before type?
@@ -522,18 +544,7 @@ fn (p mut Parser) struct_decl() {
 		// We are in an interface?
 		// `run() string` => run is a method, not a struct field
 		if is_interface {
-			mut interface_method := &Fn {
-				name: field_name
-				is_interface: true
-				is_method: true
-				receiver_typ: name
-			}
-			println('is interface. field=$field_name run=$p.run')
-			p.fn_args(mut interface_method)
-			p.fspace()
-			interface_method.typ = p.get_type()// method return type
-			typ.add_method(interface_method)
-			p.fgenln('')
+			typ.add_method(p.interface_method(field_name, name))
 			continue
 		}
 		// `pub` access mod
@@ -670,14 +681,14 @@ fn (p mut Parser) error(s string) {
 //q := "SDF" 
 	// Dump all vars and types for debugging
 	if false {
-		file_types := os.create('$TmpPath/types')
-		file_vars := os.create('$TmpPath/vars')
+		//file_types := os.create('$TmpPath/types')
+		//file_vars := os.create('$TmpPath/vars')
 		// ////debug("ALL T", q.J(p.table.types))
 		// os.write_to_file('/var/tmp/lang.types', '')//pes(p.table.types))
 		// //debug("ALL V", q.J(p.table.vars))
 		// os.write_to_file('/var/tmp/lang.vars', q.J(p.table.vars))
-		file_types.close()
-		file_vars.close()
+		//file_types.close()
+		//file_vars.close()
 	}
 	if !p.pref.is_repl {
 		println('pass=$p.run fn=`$p.cur_fn.name`')
@@ -836,7 +847,7 @@ fn (p mut Parser) get_type() string {
 		p.error('unknown type `$typ`')
 	}
 	if mul {
-		typ += repeat_char(`*`, nr_muls)
+		typ += strings.repeat(`*`, nr_muls)
 	}
 	// Register an []array type
 	if is_arr2 {
@@ -1082,7 +1093,8 @@ fn (p mut Parser) assign_statement(v Var, ph int, is_map bool) {
 		println('allowing option asss')
 		expr := p.cgen.cur_line.right(pos)
 		left := p.cgen.cur_line.left(pos)
-		p.cgen.cur_line = left + 'opt_ok($expr)'
+		//p.cgen.cur_line = left + 'opt_ok($expr)'
+		p.cgen.cur_line = left + 'opt_ok($expr, sizeof($expr_type))'
 	}
 	else if !p.builtin_pkg && !p.check_types_no_throw(expr_type, p.assigned_type) {
 		p.scanner.line_nr--
@@ -2123,20 +2135,15 @@ fn format_str(str string) string {
 
 fn (p mut Parser) typ_to_fmt(typ string) string {
 	t := p.table.find_type(typ)
-	if t.parent == 'int' {
+	if t.is_enum { 
 		return '%d'
 	}
 	switch typ {
 	case 'string': return '%.*s'
 	case 'ustring': return '%.*s'
-	case 'byte': return '%d'
-	case 'int': return '%d'
-	case 'char': return '%d'
-	case 'byte': return '%d'
-	case 'bool': return '%d'
-	case 'u32': return '%d'
+	case 'byte', 'int', 'char', 'byte', 'bool', 'u32', 'i32', 'i16', 'u16', 'i8', 'u8': return '%d'
 	case 'f64', 'f32': return '%f'
-	case 'i64': return '%lld'
+	case 'i64', 'u64': return '%lld'
 	case 'byte*', 'byteptr': return '%s'
 		// case 'array_string': return '%s'
 		// case 'array_int': return '%s'
@@ -2145,7 +2152,6 @@ fn (p mut Parser) typ_to_fmt(typ string) string {
 		if typ.ends_with('*') {
 			return '%p' 
 		} 
-		p.error('unhandled sprintf format "$typ" ')
 	}
 	return ''
 }
@@ -2210,17 +2216,22 @@ fn (p mut Parser) string_expr() {
 			p.next()
 		}
 		else {
-			format += p.typ_to_fmt(typ)
+			f := p.typ_to_fmt(typ) 
+			if f == '' { 
+				p.error('unhandled sprintf format "$typ" ')
+			} 
+			format += f 
 		}
 	}
 	// println("hello %d", num) optimization.
 	if p.cgen.nogen {
 		return
 	}
-	// Don't allocate a new string, just print	it. TODO HACK PRINT OPT
+	// println: don't allocate a new string, just print	it. 
 	cur_line := p.cgen.cur_line.trim_space()
-	if cur_line.contains('println(') && p.tok != PLUS && !p.pref.is_prod && !cur_line.contains('string_add') {
-		p.cgen.cur_line = cur_line.replace('println(', 'printf(')
+	if cur_line.contains('println (') && p.tok != PLUS && 
+		!cur_line.contains('string_add') && !cur_line.contains('eprintln') {
+		p.cgen.cur_line = cur_line.replace('println (', 'printf(')
 		p.gen('$format\\n$args')
 		return
 	}
@@ -3030,8 +3041,9 @@ fn (p mut Parser) return_st() {
 			expr_type := p.bool_expression()
 			// Automatically wrap an object inside an option if the function returns an option
 			if p.cur_fn.typ.ends_with(expr_type) && p.cur_fn.typ.starts_with('Option_') {
+				//p.cgen.set_placeholder(ph, 'opt_ok(& ')
 				p.cgen.set_placeholder(ph, 'opt_ok(& ')
-				p.gen(')')
+				p.gen(', sizeof($expr_type))')
 			}
 			p.check_types(expr_type, p.cur_fn.typ)
 		}
@@ -3170,7 +3182,7 @@ fn (p &Parser) building_v() bool {
 // fmt helpers
 fn (scanner mut Scanner) fgen(s string) {
 	if scanner.fmt_line_empty {
-		s = repeat_char(`\t`, scanner.fmt_indent) + s
+		s = strings.repeat(`\t`, scanner.fmt_indent) + s
 	}
 	scanner.fmt_out.write(s)
 	scanner.fmt_line_empty = false
@@ -3178,7 +3190,7 @@ fn (scanner mut Scanner) fgen(s string) {
 
 fn (scanner mut Scanner) fgenln(s string) {
 	if scanner.fmt_line_empty {
-		s = repeat_char(`\t`, scanner.fmt_indent) + s
+		s = strings.repeat(`\t`, scanner.fmt_indent) + s
 	}
 	scanner.fmt_out.writeln(s)
 	scanner.fmt_line_empty = true
