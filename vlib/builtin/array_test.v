@@ -95,6 +95,25 @@ fn test_repeat() {
 	b := [7; 3]
 	assert b.len == 3
 	assert b[0] == 7 && b[1] == 7 && b[2] == 7
+	{
+		mut aa := [1.1 ; 10]
+		// FIXME: assert aa[0] == 1.1 will fail, need fix
+		assert aa[0] == f32(1.1)
+		assert aa[5] == f32(1.1)
+		assert aa[9] == f32(1.1)
+	}
+	{
+		mut aa := [f32(1.1) ; 10]
+		assert aa[0] == f32(1.1)
+		assert aa[5] == f32(1.1)
+		assert aa[9] == f32(1.1)
+	}
+	{
+		mut aa := [f64(1.1) ; 10]
+		assert aa[0] == f64(1.1)
+		assert aa[5] == f64(1.1)
+		assert aa[9] == f64(1.1)
+	}
 }
 
 fn test_right() {
@@ -122,7 +141,7 @@ fn test_slice() {
 fn test_push_many() {
 	mut a := [1, 2, 3]
 	b := [4, 5, 6]
-	a._push_many(b.data, b.len)
+	a << b 
 	assert a.len == 6
 	assert a[0] == 1
 	assert a[3] == 4
