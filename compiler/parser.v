@@ -810,7 +810,8 @@ fn (p mut Parser) get_type() string {
 		// "typ" not found? try "pkg__typ"
 		if t.name == '' && !p.builtin_pkg {
 			// && !p.first_run() {
-			if !typ.contains('array_') && p.pkg != 'main' && !typ.contains('__') {
+			if !typ.contains('array_') && p.pkg != 'main' && !typ.contains('__') &&
+				!typ.starts_with('[') { 
 				typ = p.prepend_pkg(typ)
 			}
 			t = p.table.find_type(typ)
@@ -2665,7 +2666,7 @@ fn (p mut Parser) chash() {
 	else if hash.contains('embed') {
 		pos := hash.index('embed') + 5
 		file := hash.right(pos)
-		if p.pref.build_mode != DEFAULT_MODE {
+		if p.pref.build_mode != default_mode {
 			p.genln('#include $file')
 		}
 	}

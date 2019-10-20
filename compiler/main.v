@@ -8,20 +8,19 @@ import os
 import time
 
 const (
-	Version = '0.1.10'
+	Version = '0.1.11'
 )
 
-// TODO no caps
 enum BuildMode {
 	// `v program.v'
 	// Build user code only, and add pre-compiled vlib (`cc program.o builtin.o os.o...`)
-	DEFAULT_MODE
+    default_mode
 	// `v -embed_vlib program.v`
 	// vlib + user code in one file (slower compilation, but easier when working on vlib and cross-compiling)
-	EMBED_VLIB
+    embed_vlib
 	// `v -lib ~/v/os`
 	// build any module (generate os.o + os.vh)
-	BUILD // TODO a better name would be smth like `.build_module` I think
+    build //TODO a better name would be smth like `.build_module` I think
 }
 
 fn vtmp_path() string {
@@ -243,23 +242,23 @@ void reload_so();
 void init_consts();')
 	imports_json := v.table.imports.contains('json')
 	// TODO remove global UI hack
-	if v.os == MAC && ((v.pref.build_mode == EMBED_VLIB && v.table.imports.contains('ui')) ||
-	(v.pref.build_mode == BUILD && v.dir.contains('/ui'))) {
+	if v.os == MAC && ((v.pref.build_mode == embed_vlib && v.table.imports.contains('ui')) ||
+	(v.pref.build_mode == build && v.dir.contains('/ui'))) {
 		cgen.genln('id defaultFont = 0; // main.v')
 	}
 	// TODO remove ugly .c include once V has its own json parser
 	// Embed cjson either in embedvlib or in json.o
-	if imports_json && v.pref.build_mode == EMBED_VLIB ||
-	(v.pref.build_mode == BUILD && v.out_name.contains('json.o')) {
+	if imports_json && v.pref.build_mode == embed_vlib ||
+	(v.pref.build_mode == build && v.out_name.contains('json.o')) {
 		cgen.genln('#include "cJSON.c" ')
 	}
 	// We need the cjson header for all the json decoding user will do in default mode
-	if v.pref.build_mode == DEFAULT_MODE {
+	if v.pref.build_mode == default_mode {
 		if imports_json {
 			cgen.genln('#include "cJSON.h"')
 		}
 	}
-	if v.pref.build_mode == EMBED_VLIB || v.pref.build_mode == DEFAULT_MODE {
+	if v.pref.build_mode == embed_vlib || v.pref.build_mode == default_mode {
 		// If we declare these for all modes, then when running `v a.v` we'll get
 		// `/usr/bin/ld: multiple definition of 'total_m'`
 		// TODO
@@ -304,7 +303,7 @@ void init_consts();')
 	dd := d.str()
 	cgen.lines.set(defs_pos, dd)// TODO `def.str()` doesn't compile
 	// if v.build_mode in [.default, .embed_vlib] {
-	if v.pref.build_mode == DEFAULT_MODE || v.pref.build_mode == EMBED_VLIB {
+	if v.pref.build_mode == default_mode || v.pref.build_mode == embed_vlib {
 		// vlib can't have `init_consts()`
 		cgen.genln('void init_consts() { g_str_buf=malloc(1000); ${cgen.consts_init.join_lines()} }')
 		// _STR function can't be defined in vlib
@@ -344,7 +343,7 @@ string _STR_TMP(const char *fmt, ...) {
 	}
 	// Make sure the main function exists
 	// Obviously we don't need it in libraries
-	if v.pref.build_mode != BUILD {
+	if v.pref.build_mode != build {
 		if !v.table.main_exists() && !v.pref.is_test {
 			// It can be skipped in single file programs
 			if v.pref.is_script {
@@ -412,7 +411,84 @@ string _STR_TMP(const char *fmt, ...) {
 	}
 }
 
+fn (c &V) cc_windows_cross() {
+       if !c.out_name.ends_with('.exe') {
+               c.out_name = c.out_name + '.exe'
+       }
+       mut args := '-o $c.out_name -w -L. '
+       // -I flags
+       for flag in c.table.flags {
+               if !flag.starts_with('-l') {
+                       args += flag
+                       args += ' '
+               }
+       }
+       mut libs := ''
+       if c.pref.build_mode == default_mode {
+               libs = '$TmpPath/vlib/builtin.o'
+               if !os.file_exists(libs) {
+                       println('`builtin.o` not found')
+                       exit(1) 
+               }
+               for imp in c.table.imports {
+                       libs += ' $TmpPath/vlib/${imp}.o'
+               }
+       }
+       args += ' $c.out_name_c '
+       // -l flags (libs)
+       for flag in c.table.flags {
+               if flag.starts_with('-l') {
+                       args += flag
+                       args += ' '
+               }
+       }
+               println('Cross compiling for Windows...')
+               winroot := '$TmpPath/winroot' 
+	if !os.dir_exists(winroot) {
+		winroot_url := 'https://github.com/vlang/v/releases/download/v0.1.10/winroot.zip' 
+		println('"$winroot" not found. Download it from $winroot_url and save in $TmpPath') 
+		exit(1) 
+ 
+} 
+               mut obj_name := c.out_name
+               obj_name = obj_name.replace('.exe', '')
+               obj_name = obj_name.replace('.o.o', '.o')
+               mut include := '-I $winroot/include '
+               cmd := 'clang -o $obj_name -w $include -m32 -c -target x86_64-win32 $TmpPath/$c.out_name_c'
+               if c.pref.show_c_cmd {
+                       println(cmd)
+               }
+               if os.system(cmd) != 0 {
+			println('Cross compilation for Windows failed. Make sure you have clang installed.') 
+                       exit(1) 
+               }
+               if c.pref.build_mode != build {
+                       link_cmd := 'lld-link $obj_name $winroot/lib/libcmt.lib ' +
+                       '$winroot/lib/libucrt.lib $winroot/lib/kernel32.lib $winroot/lib/libvcruntime.lib ' +
+                       '$winroot/lib/uuid.lib'
+               if c.pref.show_c_cmd {
+		println(link_cmd) 
+		} 
+
+                if  os.system(link_cmd)  != 0 { 
+			println('Cross compilation for Windows failed. Make sure you have lld linker installed.')  
+                       exit(1) 
+} 
+                       // os.rm(obj_name)
+               }
+               println('Done!')
+}
+ 
+ 
+
 fn (v mut V) cc() {
+	// Cross compiling for Windows 
+	if v.os == WINDOWS {
+		$if !windows { 
+			v.cc_windows_cross()  
+			return 
+		} 
+	} 
 	linux_host := os.user_os() == 'linux'
 	v.log('cc() isprod=$v.pref.is_prod outname=$v.out_name')
 	mut a := ['-w', '-march=native']// arguments for the C compiler
@@ -431,13 +507,13 @@ fn (v mut V) cc() {
 		a << '-g'
 	}
 	mut libs := ''// builtin.o os.o http.o etc
-	if v.pref.build_mode == BUILD {
+	if v.pref.build_mode == build {
 		a << '-c'
 	}
-	else if v.pref.build_mode == EMBED_VLIB {
+	else if v.pref.build_mode == embed_vlib {
 		// 
 	}
-	else if v.pref.build_mode == DEFAULT_MODE {
+	else if v.pref.build_mode == default_mode {
 		libs = '$TmpPath/vlib/builtin.o'
 		if !os.file_exists(libs) {
 			println('`builtin.o` not found')
@@ -492,7 +568,7 @@ mut args := ''
 		a << '-x objective-c'
 	}
 	// Without these libs compilation will fail on Linux
-	if v.os == LINUX && v.pref.build_mode != BUILD {
+	if v.os == LINUX && v.pref.build_mode != build {
 		a << '-lm -ldl -lpthread'
 	}
 	// Find clang executable
@@ -519,7 +595,7 @@ mut args := ''
 		panic('clang error')
 	}
 	// Link it if we are cross compiling and need an executable
-	if v.os == LINUX && !linux_host && v.pref.build_mode != BUILD {
+	if v.os == LINUX && !linux_host && v.pref.build_mode != build {
 		v.out_name = v.out_name.replace('.o', '')
 		obj_file := v.out_name + '.o'
 		println('linux obj_file=$obj_file out_name=$v.out_name')
@@ -530,7 +606,7 @@ mut args := ''
 		'$sysroot/lib/x86_64-linux-gnu/libm-2.28.a ' +
 		'/usr/lib/x86_64-linux-gnu/crti.o ' +
 		obj_file +
-		' /usr/lib/x86_64-linux-gnu/libv.so ' +
+		' /usr/lib/x86_64-linux-gnu/libc.so ' +
 		'/usr/lib/x86_64-linux-gnu/crtn.o')
 		println(ress)
 		if ress.contains('error:') {
@@ -569,8 +645,8 @@ fn (v &V) v_files_from_dir(dir string) []string {
 		if file.ends_with('_lin.v') && v.os != LINUX {
 			continue
 		}
-		if file.ends_with('_mav.v') && v.os != MAC {
-			lin_file := file.replace('_mav.v', '_lin.v')
+		if file.ends_with('_mac.v') && v.os != MAC {
+			lin_file := file.replace('_mac.v', '_lin.v')
 			// println('lin_file="$lin_file"')
 			// If there are both _mav.v and _lin.v, don't use _mav.v
 			if os.file_exists('$dir/$lin_file') {
@@ -630,7 +706,7 @@ fn (v mut V) add_user_v_files() {
 		p.parse()
 	}
 	// Parse lib imports
-	if v.pref.build_mode == DEFAULT_MODE {
+	if v.pref.build_mode == default_mode {
 		for i := 0; i < v.table.imports.len; i++ {
 			pkg := v.table.imports[i]
 			vfiles := v.v_files_from_dir('$TmpPath/vlib/$pkg')
@@ -665,7 +741,7 @@ fn (v mut V) add_user_v_files() {
 		// If we are in default mode, we don't parse vlib .v files, but header .vh files in
 		// TmpPath/vlib
 		// These were generated by vfmt
-		if v.pref.build_mode == DEFAULT_MODE || v.pref.build_mode == BUILD {
+		if v.pref.build_mode == default_mode || v.pref.build_mode == build {
 			module_path = '$TmpPath/vlib/$pkg'
 		}
 		vfiles := v.v_files_from_dir(module_path)
@@ -717,9 +793,9 @@ fn new_v(args[]string) *V {
 	target_os := get_arg(joined_args, 'os', '')
 	mut out_name := get_arg(joined_args, 'o', 'a.out')
 	// build mode
-	mut build_mode := DEFAULT_MODE
+	mut build_mode := default_mode
 	if args.contains('-lib') {
-		build_mode = BUILD
+		build_mode = build
 		// v -lib ~/v/os => os.o
 		base := dir.all_after('/')
 		println('Building module ${base}...')
@@ -733,7 +809,7 @@ fn new_v(args[]string) *V {
 	}
 	// TODO embed_vlib is temporarily the default mode. It's much slower.
 	else if !args.contains('-embed_vlib') {
-		build_mode = EMBED_VLIB
+		build_mode = embed_vlib
 	}
 	// 
 	is_test := dir.ends_with('_test.v')
@@ -820,7 +896,7 @@ fn new_v(args[]string) *V {
 		for builtin in builtins {
 			mut f := '$lang_dir/vlib/builtin/$builtin'
 			// In default mode we use precompiled vlib.o, point to .vh files with signatures
-			if build_mode == DEFAULT_MODE || build_mode == BUILD {
+			if build_mode == default_mode || build_mode == build {
 				f = '$TmpPath/vlib/builtin/${builtin}h'
 			}
 			files << f
