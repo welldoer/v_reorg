@@ -346,7 +346,6 @@ pub fn file_exists(path string) bool {
 pub fn dir_exists(path string) bool {
 	$if windows {
 		attr := int(C.GetFileAttributes(path.cstr())) 
-		println('ATTR =$attr') 
 		return attr == FILE_ATTRIBUTE_DIRECTORY 
 	} 
 	$else { 
@@ -549,6 +548,7 @@ pub fn getexepath() string {
 pub fn is_dir(path string) bool {
 	$if windows {
 		val := int(C.GetFileAttributes(path.cstr()))
+		// Note: this return is broke (wrong). we have dir_exists already how will this differ?
 		return val &FILE_ATTRIBUTE_DIRECTORY > 0
 	} 
 	$else { 
@@ -585,33 +585,93 @@ pub fn getwd() string {
 	return string(buf)
 }
 
+
+// windows
+const(
+	INVALID_HANDLE_VALUE = -1
+)
+
+// win: FILETIME
+// https://docs.microsoft.com/en-us/windows/win32/api/minwinbase/ns-minwinbase-filetime
+struct filetime {
+  dwLowDateTime u32
+  dwHighDateTime u32
+}
+
+// win: WIN32_FIND_DATA
+// https://docs.microsoft.com/en-us/windows/win32/api/minwinbase/ns-minwinbase-_win32_find_dataa
+struct win32finddata {
+mut:
+    dwFileAttributes u32
+    ftCreationTime filetime
+  	ftLastAccessTime filetime
+  	ftLastWriteTime filetime
+	nFileSizeHigh u32
+	nFileSizeLow u32
+	dwReserved0 u32
+	dwReserved1 u32
+	cFileName [260]u16 // MAX_PATH = 260 
+	cAlternateFileName [14]u16 // 14
+  	dwFileType u32
+  	dwCreatorType u32
+  	wFinderFlags u16
+}
+
 pub fn ls(path string) []string {
 	$if windows {
-		return []string 
-} 
-$else { 
- 
-	mut res := []string
-	dir := C.opendir(path.str)
-	if isnil(dir) {
-		println('ls() couldnt open dir "$path"')
-		print_c_errno()
+		mut find_file_data := win32finddata{}
+		mut dir_files := []string
+		// We can also check if the handle is valid. but using dir_exists instead
+		// h_find_dir := C.FindFirstFile(path.cstr(), &find_file_data)
+		// if (INVALID_HANDLE_VALUE == h_find_dir) {
+		//     return dir_files
+		// }
+		// C.FindClose(h_find_dir)
+		if !dir_exists(path) {
+			println('ls() couldnt open dir "$path" (does not exist).')
+			return dir_files
+		}
+		// NOTE: Should eventually have path struct & os dependant path seperator (eg os.PATH_SEPERATOR)
+		// we need to add files to path eg. c:\windows\*.dll or :\windows\*
+		path_files := '$path\\*' 
+		// NOTE:TODO: once we have a way to convert utf16 wide character to utf8
+		// we should use FindFirstFileW and FindNextFileW
+		h_find_files := C.FindFirstFile(path_files.cstr(), &find_file_data)
+		first_filename := tos(&find_file_data.cFileName, strlen(find_file_data.cFileName))
+		if first_filename != '.' && first_filename != '..' {
+			dir_files << first_filename
+		}
+		for C.FindNextFile(h_find_files, &find_file_data) {
+			filename := tos(&find_file_data.cFileName, strlen(find_file_data.cFileName))
+			if filename != '.' && filename != '..' {
+				dir_files << filename.clone()
+			}
+		}
+		C.FindClose(h_find_files)
+		return dir_files
+	} 
+	$else { 
+		mut res := []string
+		dir := C.opendir(path.str)
+		if isnil(dir) {
+			println('ls() couldnt open dir "$path"')
+			print_c_errno()
+			return res
+		}
+		mut ent := &C.dirent{!}
+		for {
+			ent = C.readdir(dir)
+			if isnil(ent) {
+				break
+			}
+			name := tos_clone(ent.d_name)
+			if name != '.' && name != '..' && name != '' {
+				res << name
+			}
+		}
+		C.closedir(dir)
 		return res
-	}
-	mut ent := &C.dirent{!}
-	for {
-		ent = C.readdir(dir)
-		if isnil(ent) {
-			break
-		}
-		name := tos_clone(ent.d_name)
-		if name != '.' && name != '..' && name != '' {
-			res << name
-		}
-	}
-	C.closedir(dir)
-	return res
-} 
+	} 
 }
 
 pub fn signal(signum int, handler voidptr) {
