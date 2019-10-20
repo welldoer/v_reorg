@@ -668,7 +668,7 @@ fn (p &Parser) strtok() string {
 	return res
 }
 
-// same as check(), but addes a space to the formatter output
+// same as check(), but adds a space to the formatter output
 // TODO bad name
 fn (p mut Parser) check_space(expected Token) {
 	p.fspace()
@@ -1296,7 +1296,7 @@ fn (p mut Parser) name_expr() string {
 			if !T.has_enum_val(val) {
 				p.error('enum `$T.name` does not have value `$val`') 
 			} 
-			p.gen(p.mod + '__' + p.expected_type + '_' + val) 
+			p.gen(T.mod + '__' + p.expected_type + '_' + val) 
 		} 
 		return p.expected_type 
 	} 
@@ -1375,7 +1375,7 @@ fn (p mut Parser) name_expr() string {
 			p.check(.dot)
 			val := p.lit
 			// println('enum val $val')
-			p.gen(p.mod + '__' + enum_type.name + '_' + val)// `color = main__Color_green`
+			p.gen(enum_type.mod + '__' + enum_type.name + '_' + val)// `color = main__Color_green`
 			p.next()
 			return enum_type.name
 		}
@@ -1827,7 +1827,7 @@ fn (p mut Parser) index_expr(typ string, fn_ph int) string {
 // returns resulting type
 fn (p mut Parser) expression() string {
 	if p.scanner.file_path.contains('test_test') {
-		println('epxression() pass=$p.run tok=')
+		println('expression() pass=$p.run tok=')
 		p.print_tok()
 	}
 	p.cgen('/* expr start*/')
