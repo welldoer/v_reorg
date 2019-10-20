@@ -405,6 +405,7 @@ string _STR_TMP(const char *fmt, ...) {
 }
 
 fn (c mut V) cc() {
+	ticks := time.ticks() 
 	linux_host := os.user_os() == 'linux'
 	c.log('cc() isprod=$c.is_prod outname=$c.out_name')
 	mut a := ['-w']// arguments for the C compiler
@@ -488,7 +489,7 @@ mut args := ''
 		a << '-lm -ldl -lpthread'
 	}
 	// Find clang executable
-	fast_clang := '/usr/local/Cellar/llvm/8.0.0/bin/clang'
+	fast_clang := 'ff'///usr/local/Cellar/llvm/8.0.0/bin/clang'
 	args := a.join(' ')
 	mut cmd := if os.file_exists(fast_clang) {
 		'$fast_clang $args'
@@ -530,6 +531,10 @@ mut args := ''
 		}
 		println('linux cross compilation done. resulting binary: "$c.out_name"')
 	}
+	if c.show_c_cmd { 
+		diff := time.ticks() - ticks 
+		println('cc() took $diff ms ')
+	} 
 	//os.rm('$TmpPath/$c.out_name_c') 
 }
 
@@ -696,7 +701,7 @@ fn (c &V) log(s string) {
 	println(s)
 }
 
-fn new_v(args[]string) *V {
+fn new_v(args []string) *V {
 	mut dir := args.last()
 	if args.contains('run') {
 		dir = args[2]
