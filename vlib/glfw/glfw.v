@@ -4,11 +4,16 @@
 
 module glfw
 
+import gl
+
 #flag -I @VROOT/thirdparty/glfw 
 #flag -L @VROOT/thirdparty/glfw 
 
 // Debugging a custom build
 //-#flag darwin -L/var/tmp/glfw/src/
+
+// MacPorts
+#flag darwin -L/opt/local/lib
 
 #flag darwin -lglfw
 #flag linux -lglfw

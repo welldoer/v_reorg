@@ -135,8 +135,12 @@ pub fn(graph &ModDepGraph) imports() []string {
 	return mods
 }
 
-pub fn(graph &ModDepGraph) last_node() {
+pub fn(graph &ModDepGraph) last_node() ModDepGraphNode {
 	return graph.nodes[graph.nodes.len-1]
+}
+
+pub fn(graph &ModDepGraph) last_cycle() string {
+	return graph.nodes[graph.nodes.len-1].last_cycle
 }
 
 pub fn(graph &ModDepGraph) display() {

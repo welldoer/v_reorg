@@ -9,7 +9,7 @@ import time
 import strings
 
 const (
-	Version = '0.1.16'  
+	Version = '0.1.17'  
 )
 
 enum BuildMode {
@@ -90,6 +90,7 @@ mut:
 	is_run         bool
 	show_c_cmd     bool // `v -show_c_cmd` prints the C command to build program.v.c
 	sanitize       bool // use Clang's new "-fsanitize" option
+	is_debuggable  bool
 	is_debug       bool // keep compiled C files
 	no_auto_free   bool // `v -nofree` disable automatic `free()` insertion for better performance in some applications  (e.g. compilers) 
 	cflags        string // Additional options which will be passed to the C compiler.
@@ -178,7 +179,7 @@ fn (v mut V) compile() {
 		p.parse()
 	}
 	// Main pass
-	cgen.run = Pass.main
+	cgen.pass = Pass.main
 	if v.pref.is_play {
 		cgen.genln('#define VPLAY (1) ')
 	}
@@ -569,7 +570,7 @@ void reload_so() {
 	}
 	v.cc()
 	if v.pref.is_test || v.pref.is_run {
-		if true || v.pref.is_verbose {
+		if v.pref.is_verbose {
 			println('============ running $v.out_name ============') 
 		}
 		mut cmd := if v.out_name.starts_with('/') {
@@ -805,10 +806,11 @@ mut args := ''
 		println('cc took $diff ms') 
 		println('=========\n')
 	}
-	// println('C OUTPUT:')
 	if res.contains('error: ') {
-		println(res)
-		panic('clang error')
+		if v.pref.is_debug { 
+			println(res)
+		} 
+		panic('C error. This should never happen. Please create a GitHub issue.')
 	}
 	// Link it if we are cross compiling and need an executable
 	if v.os == .linux && !linux_host && v.pref.build_mode != .build {
@@ -917,9 +919,16 @@ fn (v mut V) add_user_v_files() {
 	}
 	// Parse lib imports
 	if v.pref.build_mode == .default_mode {
+		// strange ( for mod in v.table.imports ) dosent loop all items
+		// for mod in v.table.imports {
 		for i := 0; i < v.table.imports.len; i++ {
-			pkg := v.module_path(v.table.imports[i])
-			vfiles := v.v_files_from_dir('$ModPath/vlib/$pkg')
+			mod := v.table.imports[i]
+			mod_path := v.module_path(mod)
+			import_path := '$ModPath/vlib/$mod_path'
+			vfiles := v.v_files_from_dir(import_path)
+			if vfiles.len == 0 {
+				panic('cannot import module $mod (no .v files in "$import_path").')
+			}
 			// Add all imports referenced by these libs
 			for file in vfiles {
 				mut p := v.new_parser(file, Pass.imports)
@@ -929,16 +938,21 @@ fn (v mut V) add_user_v_files() {
 		}
 	}
 	else {
-		// TODO this used to crash compiler?
-		// for pkg in v.table.imports {
+		// strange ( for mod in v.table.imports ) dosent loop all items
+		// for mod in v.table.imports {
 		for i := 0; i < v.table.imports.len; i++ {
-			pkg := v.module_path(v.table.imports[i])
+			mod := v.table.imports[i]
+			mod_path := v.module_path(mod)
 			idir := os.getwd()
-			mut import_path := '$idir/$pkg'
-			if !os.file_exists(import_path) {
-				import_path = '$v.lang_dir/vlib/$pkg'
+			mut import_path := '$idir/$mod_path'
+			//if !os.file_exists(import_path) || !os.is_dir(import_path){
+			if !os.is_dir(import_path){
+				import_path = '$v.lang_dir/vlib/$mod_path'
 			}
 			vfiles := v.v_files_from_dir(import_path)
+			if vfiles.len == 0 {
+				panic('cannot import module $mod (no .v files in "$import_path").')
+			}
 			// Add all imports referenced by these libs
 			for file in vfiles {
 				mut p := v.new_parser(file, Pass.imports)
@@ -970,7 +984,7 @@ fn (v mut V) add_user_v_files() {
 		if v.pref.build_mode == .default_mode || v.pref.build_mode == .build {
 			module_path = '$ModPath/vlib/$mod_p'
 		}
-		if !os.file_exists(module_path) {
+		if !os.is_dir(module_path) {
 			module_path = '$v.lang_dir/vlib/$mod_p'
 		}
 		vfiles := v.v_files_from_dir(module_path)
@@ -979,7 +993,6 @@ fn (v mut V) add_user_v_files() {
 				v.files << file
 			}
 		}
-		// TODO v.files.append_array(vfiles)
 	}
 	// add remaining files (not mods)
 	for fit in file_imports {
@@ -1158,7 +1171,8 @@ fn new_v(args[]string) *V {
 		is_play: args.contains('play')
 		is_prod: args.contains('-prod')
 		is_verbose: args.contains('-verbose')
-		is_debug: args.contains('-debug')
+		is_debuggable: args.contains('-g') // -debuggable implys debug
+		is_debug: args.contains('-debug') || args.contains('-g')
 		obfuscate: obfuscate
 		is_prof: args.contains('-prof')
 		is_live: args.contains('-live')
