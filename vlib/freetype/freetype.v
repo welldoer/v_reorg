@@ -2,15 +2,15 @@
 // Use of this source code is governed by an MIT license
 // that can be found in the LICENSE file.
 
-module ft 
+module freetype 
 
 import (
 	os 
-gx 
-gg 
- stbi
- glm
- gl
+	gx 
+	gg 
+	stbi
+	glm
+	gl
 ) 
 
 #flag darwin -I/usr/local/Cellar/freetype/2.10.0/include/freetype2 
@@ -44,7 +44,7 @@ struct Face {
 	cobj voidptr
 }
 
-struct GG {
+struct Context {
 	shader    gl.Shader
 	// use_ortho bool
 	width     int
@@ -58,7 +58,6 @@ struct GG {
 	chars     []Character
 	utf_runes []string
 	utf_chars []Character
-	text_ctx  *GG
 	face      Face
 	scale     int // retina = 2 , normal = 1
 }
@@ -116,10 +115,10 @@ fn ft_load_char(_face Face, code i64) Character {
 	return ch
 }
 
-pub fn new_context(cfg gg.Cfg, scale int) *GG {
+pub fn new_context(cfg gg.Cfg, scale int) *Context {
 	// Can only have text in ortho mode
 	if !cfg.use_ortho {
-		return &GG{text_ctx: 0}
+		return &Context{} 
 	}
 	mut width := cfg.width * scale
 	mut height := cfg.height * scale
@@ -161,7 +160,7 @@ pub fn new_context(cfg gg.Cfg, scale int) *GG {
 	}
 	if !os.file_exists(font_path) {
 		println('failed to load RobotoMono-Regular.ttf')
-		exit(1)
+		return 0
 	}
 	# FT_Face face;
 	# if (FT_New_Face(ft, font_path.str, 0, &face))
@@ -216,7 +215,7 @@ pub fn new_context(cfg gg.Cfg, scale int) *GG {
 	// # glVertexAttribPointer(0, 4, GL_FLOAT,false, 4 * sizeof(GLf32), 0);
 	// gl.bind_buffer(GL_ARRAY_BUFFER, uint(0))
 	// # glBindVertexArray(0);
-	mut ctx := &GG {
+	mut ctx := &Context {
 		shader: shader,
 		width: width,
 		height: height,
@@ -225,7 +224,6 @@ pub fn new_context(cfg gg.Cfg, scale int) *GG {
 		vbo: vbo,
 		chars: chars,
 		face: f
-		text_ctx: 0
 	}
 	ctx.init_utf8_runes()
 	return ctx
@@ -233,7 +231,7 @@ pub fn new_context(cfg gg.Cfg, scale int) *GG {
 
 // A dirty hack to implement rendering of cyrillic letters.
 // All UTF-8 must be supported. 
-fn (ctx mut GG) init_utf8_runes() {
+fn (ctx mut Context) init_utf8_runes() {
 	s := '≈йцукенгшщзхъфывапролджэячсмитьбюЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ'
 	println(s)
 	us := s.ustring()
@@ -247,25 +245,23 @@ fn (ctx mut GG) init_utf8_runes() {
 }
 
 // fn (ctx &GG) render_text(text string, x, y, scale f32, color gx.Color) {
-pub fn (ctx &GG) draw_text(_x, _y int, text string, cfg gx.TextCfg) {
-println('draw text start') 
+pub fn (ctx &Context) draw_text(_x, _y int, text string, cfg gx.TextCfg) {
 	utext := text.ustring_tmp()
 	// utext := text.ustring()
 	ctx._draw_text(_x, _y, utext, cfg)
-println('draw text end') 
 	// utext.free()
 	// # glScissor(0,0,ctx->width*2,ctx->height*2);
 	// gl.disable(GL_SCISSOR_TEST)// TODO
 	// #free(text.str);
 }
 
-fn (ctx &GG) draw_text_fast(_x, _y int, text ustring, cfg gx.TextCfg) {
-	ctx.text_ctx._draw_text(_x, _y, text, cfg)
+fn (ctx &Context) draw_text_fast(_x, _y int, text ustring, cfg gx.TextCfg) {
+	ctx._draw_text(_x, _y, text, cfg)
 }
 
 // TODO  HACK with second text context
 // fn (ctx &GG) _draw_text(_x, _y int, text string, cfg gx.TextCfg) {
-fn (ctx &GG) _draw_text(_x, _y int, utext ustring, cfg gx.TextCfg) {
+fn (ctx &Context) _draw_text(_x, _y int, utext ustring, cfg gx.TextCfg) {
 	/* 
 	if utext.s.contains('on_seg') {
 		println('\nat(0)')
@@ -289,7 +285,6 @@ fn (ctx &GG) _draw_text(_x, _y int, utext ustring, cfg gx.TextCfg) {
 	// _y = _y * int(ctx.scale) //+ 26
 	y = y * int(ctx.scale) + ((cfg.size * ctx.scale) / 2) + 5 * ctx.scale
 	y = f32(ctx.height) - y 
-println('($x, $y)' ) 
 	color := cfg.color
 	// Activate corresponding render state
 	ctx.shader.use()
@@ -372,7 +367,7 @@ println('($x, $y)' )
 	// #free(runes.data);
 }
 
-pub fn (ctx &GG) draw_text_def(x, y int, text string) {
+pub fn (ctx &Context) draw_text_def(x, y int, text string) {
 	cfg := gx.TextCfg {
 		color: gx.Black,
 		size: DEFAULT_FONT_SIZE,

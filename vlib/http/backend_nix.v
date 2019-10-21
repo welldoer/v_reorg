@@ -8,10 +8,12 @@ import strings
 
 #flag windows -I @VROOT/thirdparty/openssl/include 
 #flag darwin -I @VROOT/thirdparty/openssl/include 
-#flag -lssl -lcrypto
+#flag -l ssl -l crypto
 // MacPorts
 #flag darwin -L/opt/local/lib
- 
+// Brew
+#flag darwin -L/usr/local/opt/openssl/lib
+
 #include <openssl/ssl.h>
 
 struct C.SSL {

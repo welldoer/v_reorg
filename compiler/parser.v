@@ -185,7 +185,7 @@ fn (p mut Parser) parse() {
 	}
 	p.fgenln('\n')
 	p.builtin_mod = p.mod == 'builtin'
-	p.can_chash = p.mod == 'ft' || 	p.mod == 'glfw'  || p.mod=='glfw2' || p.mod=='ui' // TODO tmp remove
+	p.can_chash = p.mod == 'freetype' || 	p.mod == 'glfw'  || p.mod=='glfw2' || p.mod=='ui' // TODO tmp remove
 	// Import pass - the first and the smallest pass that only analyzes imports
 	// fully qualify the module name, eg base64 to encoding.base64
 	fq_mod := p.table.qualify_module(p.mod, p.file_path)
@@ -788,9 +788,9 @@ fn (p mut Parser) error(s string) {
 		// os.write_to_file('/var/tmp/lang.vars', q.J(p.table.vars))
 		os.write_file('fns.txt', p.table.debug_fns()) 
 	}
-	//if p.pref.is_verbose { 
-		println('pass=$p.pass fn=`$p.cur_fn.name`')
-	//}
+	if p.pref.is_verbose || p.pref.is_debug { 
+		println('pass=$p.pass fn=`$p.cur_fn.name`\n')
+	}
 	p.cgen.save()
 	// V git pull hint
 	cur_path := os.getwd()
@@ -923,6 +923,13 @@ fn (p mut Parser) get_type() string {
 	else {
 		// Module specified? (e.g. gx.Image)
 		if p.peek() == .dot {
+			// try resolve full submodule
+			if !p.builtin_mod && p.import_table.known_alias(typ) {
+				mod := p.import_table.resolve_alias(typ)
+				if mod.contains('.') {
+					typ = mod.replace('.', '_dot_')
+				}
+			}
 			p.next()
 			p.check(.dot)
 			typ += '__$p.lit'
@@ -1123,6 +1130,10 @@ fn (p mut Parser) statement(add_semi bool) string {
 			p.js_decode()
 		}
 		else {
+			// panic and exit count as returns since they stop the function
+			if p.lit == 'panic' || p.lit == 'exit' {
+				p.returns = true
+			}
 			// `a + 3`, `a(7)` or maybe just `a` 
 			q = p.bool_expression()
 		}
@@ -1200,7 +1211,14 @@ fn (p mut Parser) assign_statement(v Var, ph int, is_map bool) {
 	tok := p.tok
 	//if !v.is_mut && !v.is_arg && !p.pref.translated && !v.is_global{
 	if !v.is_mut && !p.pref.translated && !v.is_global && !is_vid {
-		p.error('`$v.name` is immutable')
+		if v.is_arg {
+			if p.cur_fn.args.len > 0 && p.cur_fn.args[0].name == v.name {
+				println('make the receiver `$v.name` mutable:
+fn ($v.name mut $v.typ) $p.cur_fn.name (...) { 
+') 
+			} 
+		} 
+		p.error('`$v.name` is immutable.')
 	}
 	if !v.is_changed {
 		p.cur_fn.mark_var_changed(v) 
@@ -1766,7 +1784,14 @@ fn (p mut Parser) dot(str_typ string, method_ph int) string {
 		modifying := next.is_assign() || next == .inc || next == .dec
 		is_vi := p.fileis('vid')
 		if !p.builtin_mod && !p.pref.translated && modifying && !field.is_mut && !is_vi {
-			p.error('cannot modify immutable field `$field_name` (type `$typ.name`)')
+			p.error('cannot modify immutable field `$field_name` (type `$typ.name`)\n' + 
+				'declare the field with `mut:`
+
+struct $typ.name {
+  mut:
+	$field_name $field.typ 
+} 
+') 
 		}
 		if !p.builtin_mod && p.mod != typ.mod {
 		}
@@ -2914,6 +2939,8 @@ fn (p mut Parser) if_st(is_expr bool, elif_depth int) string {
 	else {
 		typ = p.statements()
 	}
+	if_returns := p.returns
+	p.returns = false
 	// println('IF TYp=$typ')
 	if p.tok == .key_else {
 		p.fgenln('') 
@@ -2922,11 +2949,17 @@ fn (p mut Parser) if_st(is_expr bool, elif_depth int) string {
 		if p.tok == .key_if {
 			if is_expr {
 				p.gen(') : (')
-				return p.if_st(is_expr, elif_depth + 1)
+				nested := p.if_st(is_expr, elif_depth + 1)
+				nested_returns := p.returns
+				p.returns = if_returns && nested_returns
+				return nested
 			}
 			else {
 				p.gen(' else ')
-				return p.if_st(is_expr, 0)
+				nested := p.if_st(is_expr, 0)
+				nested_returns := p.returns
+				p.returns = if_returns && nested_returns
+				return nested
 			}
 			// return ''
 		}
@@ -2943,6 +2976,8 @@ fn (p mut Parser) if_st(is_expr bool, elif_depth int) string {
 		if is_expr {
 			p.gen(strings.repeat(`)`, elif_depth + 1))
 		}
+		else_returns := p.returns
+		p.returns = if_returns && else_returns
 		return typ
 	}
 	p.inside_if_expr = false

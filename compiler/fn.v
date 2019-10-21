@@ -631,7 +631,7 @@ fn (p mut Parser) fn_call(f Fn, method_ph int, receiver_var, receiver_type strin
 		receiver := f.args.first()
 		if receiver.is_mut && !p.expr_var.is_mut {
 			println('$method_call  recv=$receiver.name recv_mut=$receiver.is_mut')
-			p.error('`$p.expr_var.name` is immutable')
+			p.error('`$p.expr_var.name` is immutable, declare it with `mut`')
 		} 
 		if !p.expr_var.is_changed {
 			p.cur_fn.mark_var_changed(p.expr_var) 
@@ -794,16 +794,16 @@ fn (p mut Parser) fn_call_args(f mut Fn) *Fn {
 		// `mut numbers := [1,2,3]; reverse(mut numbers);`
 		if arg.is_mut {
 			if p.tok != .key_mut {
-				p.error('`$arg.name` is a key_mut argument, you need to provide `mut`: `$f.name(...mut a...)`')
+				p.error('`$arg.name` is a mutable argument, you need to provide `mut`: `$f.name(...mut a...)`')
 			}
 			if p.peek() != .name {
-				p.error('`$arg.name` is a key_mut argument, you need to provide a variable to modify: `$f.name(... mut a...)`')
+				p.error('`$arg.name` is a mutable argument, you need to provide a variable to modify: `$f.name(... mut a...)`')
 			}
 			p.check(.key_mut)
 			var_name := p.lit 
 			v := p.cur_fn.find_var(var_name) 
 			if v.name == '' { 
-				p.error('`$arg.name` is a key_mut argument, you need to provide a variable to modify: `$f.name(... mut a...)`')
+				p.error('`$arg.name` is a mutable argument, you need to provide a variable to modify: `$f.name(... mut a...)`')
 			} 
 			if !v.is_changed {
 				p.cur_fn.mark_var_changed(v) 
@@ -877,7 +877,9 @@ fn (p mut Parser) fn_call_args(f mut Fn) *Fn {
 				// println('\ne:"$expected" got:"$got"')
 				else if ! (expected == 'void*' && got == 'int') &&
 				! (expected == 'byte*' && got.contains(']byte')) &&
-				! (expected == 'byte*' && got == 'string') {
+				! (expected == 'byte*' && got == 'string') &&
+				//! (expected == 'void*' && got == 'array_int') { 
+				! (expected == 'byte*' && got == 'byteptr') { 
 					p.cgen.set_placeholder(ph, '& /*112 EXP:"$expected" GOT:"$got" */') 
 				}
 			}
@@ -927,6 +929,7 @@ fn (p mut Parser) fn_call_args(f mut Fn) *Fn {
 	}
 	p.check(.rpar)
 	// p.gen(')')
+	return f // TODO is return f right?
 }
 
 // "fn (int, string) int"
