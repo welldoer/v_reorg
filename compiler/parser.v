@@ -458,6 +458,10 @@ fn (p mut Parser) const_decl() {
 fn (p mut Parser) type_decl() {
 	p.check(.key_type)
 	name := p.check_name()
+	// V used to have 'type Foo struct', many Go users might use this syntax
+	if p.tok == .key_struct {
+		p.error('use `struct $name {` instead of `type $name struct {`')
+	}
 	parent := p.get_type()
 	nt_pair := p.table.cgen_name_type_pair(name, parent)
 	// TODO dirty C typedef hacks for DOOM
@@ -543,10 +547,6 @@ fn (p mut Parser) struct_decl() {
 			p.gen_typedef('typedef $kind $name $name;')
 			p.gen_type('$kind $name {')
 		}
-	}
-	// V used to have 'type Foo struct', many Go users might use this syntax
-	if !is_c && p.tok == .key_struct {
-		p.error('use `struct $name {` instead of `type $name struct {`')
 	}
 	// Register the type
 	mut typ := p.table.find_type(name)
@@ -793,7 +793,7 @@ fn (p mut Parser) error(s string) {
 	p.cgen.save()
 	// V git pull hint
 	cur_path := os.getwd()
-	if !p.pref.is_repl && ( p.file_path.contains('v/compiler') || cur_path.contains('v/compiler') ){
+	if !p.pref.is_repl && !p.pref.is_test && ( p.file_path.contains('v/compiler') || cur_path.contains('v/compiler') ){
 		println('\n=========================')
 		println('It looks like you are building V. It is being frequently updated every day.') 
 		println('If you didn\'t modify the compiler\'s code, most likely there was a change that ')
@@ -1102,7 +1102,7 @@ fn (p mut Parser) vh_genln(s string) {
 }
 
 fn (p mut Parser) statement(add_semi bool) string {
-	if(p.returns) {
+	if p.returns && !p.is_vweb {
 		p.error('unreachable code')
 	}
 	p.cgen.is_tmp = false
@@ -1251,8 +1251,9 @@ fn ($v.name mut $v.typ) $p.cur_fn.name (...) {
 		println('allowing option asss')
 		expr := p.cgen.cur_line.right(pos)
 		left := p.cgen.cur_line.left(pos)
+		typ := expr_type.replace('Option_', '') 
 		//p.cgen.cur_line = left + 'opt_ok($expr)'
-		p.cgen.resetln(left + 'opt_ok($expr, sizeof($expr_type))')
+		p.cgen.resetln(left + 'opt_ok($expr, sizeof($typ))')
 	}
 	else if !p.builtin_mod && !p.check_types_no_throw(expr_type, p.assigned_type) {
 		p.scanner.line_nr--
@@ -1703,10 +1704,10 @@ fn (p mut Parser) var_expr(v Var) string {
 			p.next() 
 			return p.select_query(fn_ph) 
 		} 
-		if typ == 'pg__DB' && !p.fileis('pg.v') {
+		if typ == 'pg__DB' && !p.fileis('pg.v') && p.peek() == .name {
 			p.next() 
-			 p.insert_query(fn_ph) 
-return 'void' 
+			p.insert_query(fn_ph) 
+			return 'void' 
 		} 
 		// println('dot #$dc')
 		typ = p.dot(typ, fn_ph)
@@ -1780,7 +1781,12 @@ fn (p mut Parser) dot(str_typ string, method_ph int) string {
 		//println('dot() field_name=$field_name typ=$str_typ prev_tok=${prev_tok.str()}') 
 	//}
 	has_field := p.table.type_has_field(typ, field_name)
-	has_method := p.table.type_has_method(typ, field_name)
+	mut has_method := p.table.type_has_method(typ, field_name)
+	// generate `.str()` 
+	if !has_method && field_name == 'str' && typ.name.starts_with('array_') { 
+		p.gen_array_str(mut typ) 
+		has_method = true 
+	} 
 	if !typ.is_c && !has_field && !has_method && !p.first_pass() {
 		if typ.name.starts_with('Option_') {
 			opt_type := typ.name.right(7) 
@@ -1957,12 +1963,17 @@ fn (p mut Parser) index_expr(typ_ string, fn_ph int) string {
 		// expression inside [ ]
 		if is_arr {
 			T := p.table.find_type(p.expression())
-			if T.parent != 'int' {
+			// Allows only i8-64 and u8-64 to be used when accessing an array
+			if T.parent != 'int' && T.parent != 'u32' {
 				p.check_types(T.name, 'int')
 			}
 		}
 		else {
-			p.expression()
+			T := p.table.find_type(p.expression())
+			// TODO: Get the key type of the map instead of only string.
+			if is_map && T.parent != 'string' {
+				p.check_types(T.name, 'string')
+			}
 		}
 		p.check(.rsbr)
 		// if (is_str && p.builtin_mod) || is_ptr || is_fixed_arr && ! (is_ptr && is_arr) {
@@ -2226,7 +2237,7 @@ fn (p mut Parser) term() string {
 		p.next()
 		p.gen(tok.str())// + ' /*op2*/ ')
 		p.fgen(' ' + tok.str() + ' ')
-		if is_div && p.tok == .number && p.lit == '0' {
+		if (is_div || is_mod) && p.tok == .number && p.lit == '0' {
 			p.error('division by zero')
 		}
 		if is_mod && (is_float_type(typ) || !is_number_type(typ)) {
@@ -3309,10 +3320,10 @@ fn (p mut Parser) return_st() {
 			if p.cur_fn.typ.ends_with(expr_type) && p.cur_fn.typ.starts_with('Option_') {
 				tmp := p.get_tmp()
 				ret := p.cgen.cur_line.right(ph)
-
-				p.cgen.cur_line = '$expr_type $tmp = OPTION_CAST($expr_type)($ret);'
+				typ := expr_type.replace('Option_', '') 
+				p.cgen.cur_line = '$expr_type $tmp = OPTION_CAST($typ)($ret);'
 				p.cgen.resetln('$expr_type $tmp = OPTION_CAST($expr_type)($ret);')
-				p.gen('return opt_ok(&$tmp, sizeof($expr_type))')
+				p.gen('return opt_ok(&$tmp, sizeof($typ))')
 			}
 			else {
 				ret := p.cgen.cur_line.right(ph)
