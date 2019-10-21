@@ -110,11 +110,8 @@ int g_test_ok = 1;
 #include <float.h>
 #include <signal.h>
 #include <sys/stat.h>
-#ifndef _WIN32
-#include <dirent.h>
-#endif
-#ifndef _WIN32
-#include <unistd.h>
+#ifdef _WIN32
+#include <winsock2.h>
 #endif
 #include <math.h>
 #include <time.h>
@@ -137,6 +134,10 @@ typedef Option Option_os__File;
 typedef Option Option_os__File;
 typedef struct os__Result os__Result;
 typedef Option Option_os__Result;
+typedef void *HANDLE; // type alias name="HANDLE" parent="void*"
+typedef struct os__filetime os__filetime;
+typedef struct os__win32finddata os__win32finddata;
+typedef Option Option_string;
 typedef struct time__Time time__Time;
 typedef Option Option_int;
 typedef struct CGen CGen;
@@ -180,6 +181,7 @@ typedef Option Option_os__File;
 typedef Option Option_os__File;
 typedef Option Option_os__File;
 typedef Option Option_os__Result;
+typedef Option Option_string;
 typedef Option Option_int;
 typedef int BuildMode;
 typedef int OS;
@@ -238,6 +240,25 @@ struct os__FileInfo {
 struct os__Result {
   int exit_code;
   string output;
+};
+struct os__filetime {
+  u32 dwLowDateTime;
+  u32 dwHighDateTime;
+};
+struct os__win32finddata {
+  u32 dwFileAttributes;
+  os__filetime ftCreationTime;
+  os__filetime ftLastAccessTime;
+  os__filetime ftLastWriteTime;
+  u32 nFileSizeHigh;
+  u32 nFileSizeLow;
+  u32 dwReserved0;
+  u32 dwReserved1;
+  u16 cFileName[260];
+  u16 cAlternateFileName[14];
+  u32 dwFileType;
+  u32 dwCreatorType;
+  u16 wFinderFlags;
 };
 struct time__Time {
   int year;
@@ -711,10 +732,13 @@ int os__file_last_mod_unix(string path);
 void os__log(string s);
 void os__flush_stdout();
 void os__print_backtrace();
-string os__get_error_msg(int code);
 array_string os__ls(string path);
 bool os__dir_exists(string path);
 void os__mkdir(string path);
+HANDLE os__get_file_handle(string path);
+Option_string os__get_module_filename(HANDLE handle);
+void *os__ptr_win_get_error_msg(u32 code);
+string os__get_error_msg(int code);
 f64 math__abs(f64 a);
 f64 math__acos(f64 a);
 f64 math__asin(f64 a);
@@ -1128,6 +1152,16 @@ int os__ENABLE_LVB_GRID_WORLDWIDE;
 array_string os__args;
 #define os__MAX_PATH 4096
 string os__PathSeparator;
+int os__FORMAT_MESSAGE_ALLOCATE_BUFFER;
+int os__FORMAT_MESSAGE_ARGUMENT_ARRAY;
+int os__FORMAT_MESSAGE_FROM_HMODULE;
+int os__FORMAT_MESSAGE_FROM_STRING;
+int os__FORMAT_MESSAGE_FROM_SYSTEM;
+int os__FORMAT_MESSAGE_IGNORE_INSERTS;
+int os__SUBLANG_NEUTRAL;
+int os__SUBLANG_DEFAULT;
+int os__LANG_NEUTRAL;
+#define os__MAX_ERROR_CODE 15841
 #define math__E 2.71828182845904523536028747135266249775724709369995957496696763
 #define math__Pi                                                               \
   3.14159265358979323846264338327950288419716939937510582097494459
@@ -4719,9 +4753,150 @@ void os__todo_remove() {}
 /* returns 0 */ void os__log(string s) {}
 /* returns 0 */ void os__flush_stdout() { fflush(stdout); }
 /* returns 0 */ void os__print_backtrace() {}
+/* returns 0 */ array_string os__ls(string path) {
+
+  os__win32finddata find_file_data = (os__win32finddata){.dwFileAttributes = 0,
+                                                         .nFileSizeHigh = 0,
+                                                         .nFileSizeLow = 0,
+                                                         .dwReserved0 = 0,
+                                                         .dwReserved1 = 0,
+                                                         .dwFileType = 0,
+                                                         .dwCreatorType = 0,
+                                                         .wFinderFlags = 0};
+
+  array_string dir_files = new_array_from_c_array(
+      0, 0, sizeof(string), (string[]){EMPTY_STRUCT_INIT});
+
+  if (!os__dir_exists(path)) {
+
+    printf("ls() couldnt open dir \"%.*s\" (does not exist).\n", path.len,
+           path.str);
+
+    return dir_files;
+  };
+
+  string path_files = _STR("%.*s\\*", path.len, path.str);
+
+  void *h_find_files =
+      FindFirstFile(string_to_wide(path_files), &/*vvar*/ find_file_data);
+
+  string first_filename = string_from_wide(((u16 *)(find_file_data.cFileName)));
+
+  if (string_ne(first_filename, tos2((byte *)".")) &&
+      string_ne(first_filename, tos2((byte *)".."))) {
+
+    _PUSH(&dir_files, (first_filename), tmp6, string);
+  };
+
+  while (FindNextFile(h_find_files, &/*vvar*/ find_file_data)) {
+
+    string filename = string_from_wide(((u16 *)(find_file_data.cFileName)));
+
+    if (string_ne(filename, tos2((byte *)".")) &&
+        string_ne(filename, tos2((byte *)".."))) {
+
+      _PUSH(&dir_files, (string_clone(filename)), tmp8, string);
+    };
+  };
+
+  FindClose(h_find_files);
+
+  return dir_files;
+}
+/* returns 0 */ bool os__dir_exists(string path) {
+
+  string _path = string_replace(path, tos2((byte *)"/"), tos2((byte *)"\\"));
+
+  int attr = ((int)(GetFileAttributes(string_to_wide(_path))));
+
+  if (attr == INVALID_FILE_ATTRIBUTES) {
+
+    return 0;
+  };
+
+  if ((attr & FILE_ATTRIBUTE_DIRECTORY) != 0) {
+
+    return 1;
+  };
+
+  return 0;
+}
+/* returns 0 */ void os__mkdir(string path) {
+
+  string _path = string_replace(path, tos2((byte *)"/"), tos2((byte *)"\\"));
+
+  if (string_last_index(_path, tos2((byte *)"\\")) != -1) {
+
+    os__mkdir(string_all_before_last(_path, tos2((byte *)"\\")));
+  };
+
+  CreateDirectory(string_to_wide(_path), 0);
+}
+/* returns 0 */ HANDLE os__get_file_handle(string path) {
+
+  string mode = tos2((byte *)"rb");
+
+  void *_fd = _wfopen(string_to_wide(path), string_to_wide(mode));
+
+  if (_fd == 0) {
+
+    return ((HANDLE)(os__INVALID_HANDLE_VALUE));
+  };
+
+  void *_handle = _get_osfhandle(_fileno(_fd));
+
+  return _handle;
+}
+/* returns 0 */ Option_string os__get_module_filename(HANDLE handle) {
+
+  int sz = ((int)(4096));
+
+  u16 *buf = ((u16 *)(v_malloc(4096)));
+
+  while (1) {
+
+    void *status = GetModuleFileName(handle, &/*vvar*/ buf, sz);
+
+    if ((status == os__SUCCESS)) { /* case */
+
+      string _filename = string_from_wide2(buf, sz);
+
+      string tmp19 = OPTION_CAST(string)(_filename);
+      return opt_ok(&tmp19, sizeof(string));
+
+    } else { // default:
+
+      return v_error(tos2((byte *)"Cannot get file name from handle."));
+    };
+  };
+
+  v_panic(tos2((byte *)"this should be unreachable"));
+}
+/* returns 0 */ void *os__ptr_win_get_error_msg(u32 code) {
+
+  voidptr buf = ((voidptr)(0));
+
+  if (code > ((u32)(os__MAX_ERROR_CODE))) {
+
+    return buf;
+  };
+
+  FormatMessage(os__FORMAT_MESSAGE_ALLOCATE_BUFFER |
+                    os__FORMAT_MESSAGE_FROM_SYSTEM |
+                    os__FORMAT_MESSAGE_IGNORE_INSERTS,
+                0, code, MAKELANGID(os__LANG_NEUTRAL, os__SUBLANG_DEFAULT),
+                &/*vvar*/ buf, 0, 0);
+
+  return buf;
+}
 /* returns 0 */ string os__get_error_msg(int code) {
 
-  void *_ptr_text = strerror(code);
+  if (code < 0) {
+
+    return tos2((byte *)"");
+  };
+
+  void *_ptr_text = os__ptr_win_get_error_msg(((u32)(code)));
 
   if (_ptr_text == 0) {
 
@@ -4730,63 +4905,6 @@ void os__todo_remove() {}
 
   return tos(_ptr_text, strlen(_ptr_text));
 }
-/* returns 0 */ array_string os__ls(string path) {
-
-  array_string res = new_array_from_c_array(0, 0, sizeof(string),
-                                            (string[]){EMPTY_STRUCT_INIT});
-
-  void *dir = opendir(path.str);
-
-  if (isnil(dir)) {
-
-    printf("ls() couldnt open dir \"%.*s\"\n", path.len, path.str);
-
-    os__print_c_errno();
-
-    return res;
-  };
-
-  struct /*c struct init*/
-
-      dirent *ent = 0;
-
-  while (1) {
-
-    ent = readdir(dir);
-
-    if (isnil(ent)) {
-
-      break;
-    };
-
-    string name = tos_clone(ent->d_name);
-
-    if (string_ne(name, tos2((byte *)".")) &&
-        string_ne(name, tos2((byte *)"..")) &&
-        string_ne(name, tos2((byte *)""))) {
-
-      _PUSH(&res, (name), tmp6, string);
-    };
-  };
-
-  closedir(dir);
-
-  return res;
-}
-/* returns 0 */ bool os__dir_exists(string path) {
-
-  void *dir = opendir(path.str);
-
-  bool res = !isnil(dir);
-
-  if (res) {
-
-    closedir(dir);
-  };
-
-  return res;
-}
-/* returns 0 */ void os__mkdir(string path) { mkdir(path.str, 511); }
 /* returns 0 */ f64 math__abs(f64 a) {
 
   if (a < 0) {
@@ -19894,7 +20012,16 @@ void init_consts() {
   os__ENABLE_LVB_GRID_WORLDWIDE = 0x0010;
   os__args = /* returns 0 */ new_array_from_c_array(
       0, 0, sizeof(string), (string[]){EMPTY_STRUCT_INIT});
-  os__PathSeparator = tos2((byte *)"/");
+  os__PathSeparator = tos2((byte *)"\\");
+  os__FORMAT_MESSAGE_ALLOCATE_BUFFER = 0x00000100;
+  os__FORMAT_MESSAGE_ARGUMENT_ARRAY = 0x00002000;
+  os__FORMAT_MESSAGE_FROM_HMODULE = 0x00000800;
+  os__FORMAT_MESSAGE_FROM_STRING = 0x00000400;
+  os__FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000;
+  os__FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200;
+  os__SUBLANG_NEUTRAL = 0x00;
+  os__SUBLANG_DEFAULT = 0x01;
+  os__LANG_NEUTRAL = (os__SUBLANG_NEUTRAL);
   math__Log2E = 1.0 / math__Ln2;
   math__Log10E = 1.0 / math__Ln10;
   math__MaxI8 = (1 << 7) - 1;

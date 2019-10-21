@@ -9,7 +9,7 @@ import time
 import strings
 
 const (
-	Version = '0.1.17'  
+	Version = '0.1.18'  
 )
 
 enum BuildMode {
@@ -125,12 +125,15 @@ fn main() {
 		println('use `v install` to install modules from vpm.vlang.io') 
 		return 
 	} 
+	if args.join(' ').contains(' test v') {
+		test_v() 
+		return 
+	} 
 	if 'install' in args {
 		if args.len < 3 {
 			println('usage: v install [module] [module] [...]')
 			return 
 		}
-
 		names := args.slice(2, args.len)
 		vexec := os.executable()
 		vroot := os.dir(vexec)
@@ -231,6 +234,9 @@ fn (v mut V) compile() {
 	cgen.pass = Pass.main
 	if v.pref.is_play {
 		cgen.genln('#define VPLAY (1) ')
+	}
+	if v.pref.is_debug {
+		cgen.genln('#define VDEBUG (1) ')
 	}
 	cgen.genln('   
 #include <stdio.h>  // TODO remove all these includes, define all function signatures and types manually 
@@ -869,7 +875,7 @@ mut args := ''
 	//'$fast_clang $args'
 	//}
 	//else {
-	mut cmd := 'cc $args'
+	mut cmd := ('cc $args') // TODO fix $if after 'string'
 	//}
 	$if windows {
 		cmd = 'gcc $args' 
@@ -1424,6 +1430,31 @@ fn update_v() {
 			panic(err)
 		}
 		println(s2) 
+	} 
+} 
+
+fn test_v() {
+	vexe := os.args[0] 
+	test_files := os.walk_ext('.', '_test.v') 
+	for file in test_files {
+		print(file + ' ') 
+		if os.system('$vexe $file') != 0 {
+			println('failed') 
+			exit(1) 
+		} else { 
+			println('OK') 
+		} 
+	} 
+	println('\nBuilding examples...') 
+	examples := os.walk_ext('examples', '.v') 
+	for file in examples {
+		print(file + ' ') 
+		if os.system('$vexe $file') != 0 {
+			println('failed') 
+			exit(1) 
+		} else { 
+			println('OK') 
+		} 
 	} 
 } 
 
