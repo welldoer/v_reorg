@@ -113,6 +113,10 @@ fn is_float_type(typ string) bool {
 	return FLOAT_TYPES.contains(typ)
 }
 
+fn is_primitive_type(typ string) bool {
+	return is_number_type(typ) || typ == 'string' 
+} 
+
 fn new_table(obfuscate bool) *Table {
 	mut t := &Table {
 		obf_ids: map[string]int{}
@@ -540,7 +544,7 @@ fn type_default(typ string) string {
 	}
 	// User struct defined in another module. 
 	if typ.contains('__') {
-		return '{}'
+		return 'STRUCT_DEFAULT_VALUE'
 	}
 	// Default values for other types are not needed because of mandatory initialization
 	switch typ {
@@ -562,7 +566,7 @@ fn type_default(typ string) string {
 	case 'byteptr': return '0'
 	case 'voidptr': return '0'
 	}
-	return '{}' 
+	return 'STRUCT_DEFAULT_VALUE' 
 }
 
 // TODO PERF O(n)
@@ -699,7 +703,7 @@ fn new_file_import_table(file_path string) *FileImportTable {
 }
 
 fn (fit &FileImportTable) known_import(mod string) bool {
-	return fit.imports.exists(mod) || fit.is_aliased(mod)
+	return mod in fit.imports || fit.is_aliased(mod)
 }
 
 fn (fit mut FileImportTable) register_import(mod string) {
@@ -707,7 +711,7 @@ fn (fit mut FileImportTable) register_import(mod string) {
 }
 
 fn (fit mut FileImportTable) register_alias(alias string, mod string) {
-	if fit.imports.exists(alias) {
+	if alias in fit.imports { 
 		panic('cannot import $mod as $alias: import name $alias already in use in "${fit.file_path}".')
 		return 
 	} 
@@ -715,7 +719,7 @@ fn (fit mut FileImportTable) register_alias(alias string, mod string) {
 }
 
 fn (fit &FileImportTable) known_alias(alias string) bool {
-	return fit.imports.exists(alias)
+	return alias in fit.imports 
 }
 
 fn (fit &FileImportTable) is_aliased(mod string) bool {
@@ -728,8 +732,5 @@ fn (fit &FileImportTable) is_aliased(mod string) bool {
 }
 
 fn (fit &FileImportTable) resolve_alias(alias string) string {
-	if fit.imports.exists(alias) {
-		return fit.imports[alias]
-	}
-	return ''
+	return fit.imports[alias]
 }
