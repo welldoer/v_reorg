@@ -1,5 +1,9 @@
 module os
 
+const (
+	PathSeparator = '\\' 
+) 
+
 // Ref - https://docs.microsoft.com/en-us/windows/desktop/winprog/windows-data-types
 // A handle to an object.
 type HANDLE voidptr
@@ -36,4 +40,36 @@ pub fn get_module_filename(handle HANDLE) ?string {
             return error('Cannot get file name from handle.')
         }
     }
+}
+
+// Ref - https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-formatmessagea#parameters
+const (
+    FORMAT_MESSAGE_ALLOCATE_BUFFER = 0x00000100
+    FORMAT_MESSAGE_ARGUMENT_ARRAY  = 0x00002000
+    FORMAT_MESSAGE_FROM_HMODULE    = 0x00000800
+    FORMAT_MESSAGE_FROM_STRING     = 0x00000400
+    FORMAT_MESSAGE_FROM_SYSTEM     = 0x00001000
+    FORMAT_MESSAGE_IGNORE_INSERTS  = 0x00000200
+)
+
+// Ref - winnt.h
+const (
+    SUBLANG_NEUTRAL = 0x00
+    SUBLANG_DEFAULT = 0x01
+    LANG_NEUTRAL    = (SUBLANG_NEUTRAL)
+)   
+
+fn ptr_get_error_message(code u32) voidptr {
+    mut buf := voidptr(0)
+    C.FormatMessage(
+		FORMAT_MESSAGE_ALLOCATE_BUFFER
+		| FORMAT_MESSAGE_FROM_SYSTEM
+		| FORMAT_MESSAGE_IGNORE_INSERTS,
+        0, code, C.MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), &buf, 0, 0)
+    return buf
+}
+
+pub fn get_error_msg(code u32) string {
+	_ptrdata := ptr_get_error_message(code)
+	return tos(_ptrdata, C.strlen(_ptrdata))
 }

@@ -189,7 +189,7 @@ fn (p mut Parser) parse() {
 			}
 		case Token.func:
 			p.fn_decl()
-		case Token.typ:
+		case Token.key_type:
 			p.type_decl()
 		case Token.lsbr:
 			// `[` can only mean an [attribute] before a function
@@ -401,7 +401,7 @@ fn (p mut Parser) const_decl() {
 // `type myint int`
 // `type onclickfn fn(voidptr) int`
 fn (p mut Parser) type_decl() {
-	p.check(.typ)
+	p.check(.key_type)
 	name := p.check_name()
 	parent := p.get_type()
 	nt_pair := p.table.cgen_name_type_pair(name, parent)
@@ -642,7 +642,12 @@ fn (p mut Parser) enum_decl(_enum_name string) {
 
 // check_name checks for a name token and returns its literal
 fn (p mut Parser) check_name() string {
+	if p.tok == .key_type {
+		p.check(.key_type) 
+		return 'type' 
+	} 
 	name := p.lit
+	 
 	p.check(.name)
 	return name
 }
@@ -754,7 +759,12 @@ fn (p mut Parser) get_type() string {
 			if debug {
 				println('same line getting type')
 			}
-			f.typ = p.get_type()
+			if p.tok == .name { 
+				f.typ = p.get_type()
+			} 
+			else { 
+				f.typ = 'void'
+			} 
 			// println('fn return typ=$f.typ')
 		}
 		else {
@@ -1022,6 +1032,9 @@ fn (p mut Parser) statement(add_semi bool) string {
 		label := p.check_name()
 		p.genln('goto $label;')
 		return ''
+	case Token.key_defer:
+		p.defer_st()
+		return ''
 	case Token.hash:
 		p.chash()
 		return ''
@@ -1038,7 +1051,7 @@ fn (p mut Parser) statement(add_semi bool) string {
 	case Token.key_return:
 		p.return_st()
 	case Token.lcbr:// {} block
-		p.next()
+		p.check(.lcbr) 
 		p.genln('{')
 		p.statements()
 		return ''
@@ -1149,6 +1162,9 @@ fn (p mut Parser) var_decl() {
 		v := p.cur_fn.find_var(name)
 		p.error('redefinition of `$name`')
 	}
+	if name.len > 1 && contains_capital(name) {
+		p.error('variable names cannot contain uppercase letters, use snake_case instead')
+	}
 	p.check_space(.decl_assign) // := 
 	// Generate expression to tmp because we need its type first
 	// [TYP .name =] bool_expression()
@@ -1258,7 +1274,6 @@ fn (p mut Parser) name_expr() string {
 	hack_lit := p.lit
 	ph := p.cgen.add_placeholder()
 	// amp
-	 
 	ptr := p.tok == .amp
 	deref := p.tok == .mul
 	if ptr || deref {
@@ -1370,7 +1385,7 @@ fn (p mut Parser) name_expr() string {
 			enum_type := p.table.find_type(name)
 			if !enum_type.is_enum {
 				p.error('`$name` is not an enum')
-			}
+			} 
 			p.next()
 			p.check(.dot)
 			val := p.lit
@@ -1431,7 +1446,6 @@ fn (p mut Parser) name_expr() string {
 	if f.name == '' {
 		// We are in a second pass, that means this function was not defined, throw an error. 
 		if !p.first_run() {
-			// println('name_expr():')
 			// If orig_name is a pkg, then printing undefined: `pkg` tells us nothing
 			// if p.table.known_pkg(orig_name) {
 			if p.table.known_pkg(orig_name) || p.import_table.known_alias(orig_name) {
@@ -1443,6 +1457,7 @@ fn (p mut Parser) name_expr() string {
 			}
 		}
 		p.next()
+		// First pass, the function can be defined later. 
 		return 'void'
 	}
 	// no () after func, so func is an argument, just gen its name
@@ -1474,17 +1489,16 @@ fn (p mut Parser) name_expr() string {
 fn (p mut Parser) var_expr(v Var) string {
 	p.log('\nvar_expr() v.name="$v.name" v.typ="$v.typ"')
 	// println('var expr is_tmp=$p.cgen.is_tmp\n')
-	// p.gen('VAR EXPR ')
-	p.cur_fn.mark_var_used(v)
+	p.cur_fn.mark_var_used(v) 
 	fn_ph := p.cgen.add_placeholder()
 	p.expr_var = v
 	p.gen(p.table.var_cgen_name(v.name))
 	p.next()
 	mut typ := v.typ
-	// fn_pointer()
+	// Function pointer? 
 	if typ.starts_with('fn ') {
-		println('CALLING FN PTR')
-		p.print_tok()
+		//println('CALLING FN PTR')
+		//p.print_tok()
 		T := p.table.find_type(typ)
 		p.gen('(')
 		p.fn_call_args(T.func)
@@ -1550,8 +1564,10 @@ fn (p &Parser) fileis(s string) bool {
 // user.company.name => `str_typ` is `Company`
 fn (p mut Parser) dot(str_typ string, method_ph int) string {
 	p.check(.dot)
-	field_name := p.lit
-	p.fgen(field_name)
+	mut field_name := p.lit
+	if p.tok == .key_type {
+		field_name = 'type' 
+	} 
 	p.log('dot() field_name=$field_name typ=$str_typ')
 	//if p.fileis('main.v') {
 		//println('dot() field_name=$field_name typ=$str_typ prev_tok=${prev_tok.str()}') 
@@ -1563,9 +1579,8 @@ fn (p mut Parser) dot(str_typ string, method_ph int) string {
 	has_field := p.table.type_has_field(typ, field_name)
 	has_method := p.table.type_has_method(typ, field_name)
 	if !typ.is_c && !has_field && !has_method && !p.first_run() {
-		// println(typ.str())
 		if typ.name.starts_with('Option_') {
-			opt_type := typ.name.substr(7, typ.name.len)
+			opt_type := typ.name.right(7) 
 			p.error('unhandled option type: $opt_type?')
 		}
 		println('error in dot():')
@@ -2616,6 +2631,10 @@ fn os_name_to_ifdef(name string) string {
 		case 'windows': return '_WIN32'
 		case 'mac': return '__APPLE__'
 		case 'linux': return '__linux__' 
+		case 'freebsd': return '__FreeBSD__' 
+		case 'openbsd': return '__OpenBSD__' 
+		case 'netbsd': return '__NetBSD__' 
+		case 'dragonfly': return '__DragonFly__' 
 	} 
 	panic('bad os ifdef name "$name"') 
 	return '' 
@@ -3084,14 +3103,8 @@ else {
 }
 
 fn (p mut Parser) return_st() {
-	p.cgen.insert_before(p.cur_fn.defer)
+	p.cgen.insert_before(p.cur_fn.defer_text)
 	p.check(.key_return)
-
-	if p.cur_fn.name == 'main' {
-		p.gen('return 0')
-		p.returns = true
-		return
-	}
 
 	fn_returns := p.cur_fn.typ != 'void'
 	if fn_returns {
@@ -3118,11 +3131,16 @@ fn (p mut Parser) return_st() {
 	}
 	else {
 		// Don't allow `return val` in functions that don't return anything
-		// if p.tok != .rcbr && p.tok != .hash {
 		if false && p.tok == .name || p.tok == .integer {
 			p.error('function `$p.cur_fn.name` does not return a value')
 		}
-		p.gen('return')
+
+		if p.cur_fn.name == 'main' {
+			p.gen('return 0')
+		}
+		else {
+			p.gen('return')
+		}
 	}
 	p.returns = true
 }
@@ -3261,6 +3279,19 @@ fn (p mut Parser) attribute() {
 	} 
 	p.error('bad attribute usage') 
 } 
+
+fn (p mut Parser) defer_st() {
+	p.check(.key_defer)
+	// Wrap everything inside the defer block in /**/ comments, and save it in 
+	// `defer_text`. It will be inserted before every `return`. 
+	p.genln('/*') 
+	pos := p.cgen.lines.len 
+	p.check(.lcbr) 
+	p.genln('{') 
+	p.statements() 
+	p.cur_fn.defer_text = p.cgen.lines.right(pos).join('\n') 
+	p.genln('*/') 
+}  
 
 
 ///////////////////////////////////////////////////////////////////////////////
