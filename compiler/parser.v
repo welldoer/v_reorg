@@ -36,6 +36,10 @@ mut:
 struct Parser {
 	file_path      string // "/home/user/hello.v"
 	file_name      string // "hello.v"
+	file_platform  string // ".v", "_win.v", "_nix.v", "_mac.v", "_lin.v" ...
+	file_pcguard   string // When p.file_pcguard != '', it contains a 
+	                      // C ifdef guard clause that must be put before 
+	                      // the #include directives in the parsed .v file
 mut:
 	v              *V 
 	scanner        *Scanner
@@ -58,7 +62,7 @@ mut:
 	tmp_cnt        int
 	is_script      bool
 	pref           *Preferences // Setting and Preferences shared from V struct
-	builtin_pkg    bool
+	builtin_mod    bool
 	vh_lines       []string
 	inside_if_expr bool
 	is_struct_init bool
@@ -89,13 +93,38 @@ const (
 	MaxModuleDepth = 4
 ) 
 
+fn platform_postfix_to_ifdefguard(name string) string {
+  switch name {
+    case '.v': return '' // no guard needed
+    case '_win.v': return '#ifdef _WIN32'
+    case '_nix.v': return '#ifndef _WIN32'
+    case '_lin.v': return '#ifdef __linux__'
+    case '_mac.v': return '#ifdef __APPLE__'
+  }
+  panic('bad platform_postfix "$name"')
+  return ''
+}
+
 fn (v mut V) new_parser(path string, pass Pass) Parser {
 	v.log('new_parser("$path")')
-	v.cgen.pass = pass 
+	v.cgen.pass = pass
+	
+	mut path_pcguard := ''
+	mut path_platform := '.v'
+	for path_ending in ['_lin.v', '_mac.v', '_win.v', '_nix.v'] {
+		if path.ends_with(path_ending) {
+			path_platform = path_ending
+			path_pcguard = platform_postfix_to_ifdefguard( path_ending )
+			break
+		}		
+	}
+	
 	mut p := Parser {
 		v: v 
 		file_path: path
 		file_name: path.all_after('/')
+		file_platform: path_platform
+		file_pcguard: path_pcguard
 		scanner: new_scanner(path)
 		table: v.table
 		import_table: new_file_import_table(path)
@@ -155,13 +184,13 @@ fn (p mut Parser) parse() {
 		p.mod = p.check_name()
 	}
 	p.fgenln('\n')
-	p.builtin_pkg = p.mod == 'builtin'
-	p.can_chash = p.mod == 'ft' || 	p.mod == 'http' ||  p.mod == 'glfw' || p.mod=='ui' // TODO tmp remove
+	p.builtin_mod = p.mod == 'builtin'
+	p.can_chash = p.mod == 'ft' || 	p.mod == 'glfw'  || p.mod=='glfw2' || p.mod=='ui' // TODO tmp remove
 	// Import pass - the first and the smallest pass that only analyzes imports
 	// fully qualify the module name, eg base64 to encoding.base64
 	fq_mod := p.table.qualify_module(p.mod, p.file_path)
 	p.import_table.module_name = fq_mod
-	p.table.register_package(fq_mod)
+	p.table.register_module(fq_mod)
 	// replace "." with "_dot_" in module name for C variable names
 	p.mod = fq_mod.replace('.', '_dot_')
 	if p.pass == .imports {
@@ -170,7 +199,9 @@ fn (p mut Parser) parse() {
 		}
 		if p.table.imports.contains('builtin') {
 			p.error('module `builtin` cannot be imported') 
-		} 
+		}
+		// save file import table
+		p.table.file_imports << *p.import_table
 		return
 	}
 	// Go through every top level token or throw a compilation error if a non-top level token is met
@@ -235,7 +266,7 @@ fn (p mut Parser) parse() {
 			p.comp_time()
 		case Token.key_global:
 			if !p.pref.translated && !p.pref.is_live && 
-				!p.builtin_pkg && !p.building_v {
+				!p.builtin_mod && !p.building_v {
 				p.error('__global is only allowed in translated code')
 			}
 			p.next()
@@ -333,18 +364,18 @@ fn (p mut Parser) import_statement() {
 	if p.peek() == .number && p.scanner.text[p.scanner.pos + 1] == `.` {
 		p.error('bad import format. module/submodule names cannot begin with a number.')
 	}
-	mut pkg := p.check_name().trim_space()
-	mut mod_alias := pkg
+	mut mod := p.check_name().trim_space()
+	mut mod_alias := mod
 	// submodule support
 	mut depth := 1
 	for p.tok == .dot {
 		p.check(.dot) 
 		submodule := p.check_name()
 		mod_alias = submodule
-		pkg += '.' + submodule
+		mod += '.' + submodule
 		depth++
 		if depth > MaxModuleDepth { 
-			p.error('module depth of $MaxModuleDepth exceeded: $pkg') 
+			p.error('module depth of $MaxModuleDepth exceeded: $mod') 
 		}
 	}
 	// aliasing (import encoding.base64 as b64)
@@ -353,16 +384,16 @@ fn (p mut Parser) import_statement() {
 		mod_alias = p.check_name()
 	}
 	// add import to file scope import table
-	p.import_table.register_alias(mod_alias, pkg)
+	p.import_table.register_alias(mod_alias, mod)
 	// Make sure there are no duplicate imports
-	if p.table.imports.contains(pkg) {
+	if p.table.imports.contains(mod) {
 		return
 	}
-	p.log('adding import $pkg')
-	p.table.imports << pkg
-	p.table.register_package(pkg)
+	p.log('adding import $mod')
+	p.table.imports << mod
+	p.table.register_module(mod)
 	
-	p.fgenln(' ' + pkg)
+	p.fgenln(' ' + mod)
 }
 
 fn (p mut Parser) const_decl() {
@@ -382,9 +413,9 @@ fn (p mut Parser) const_decl() {
 		//if ! (name[0] >= `A` && name[0] <= `Z`) {
 			//p.error('const name must be capitalized')
 		//}
-		// Imported consts (like GL_TRIANG.leS) dont need pkg prepended (gl__GL_TRIANG.leS)
+		// Imported consts (like GL_TRIANG.leS) dont need mod prepended (gl__GL_TRIANG.leS)
 		if !is_import {
-			name = p.prepend_pkg(name)
+			name = p.prepend_mod(name)
 		}
 		mut typ := 'int'
 		if !is_import {
@@ -492,9 +523,12 @@ fn (p mut Parser) struct_decl() {
 		p.check(.dot)
 		name = p.check_name()
 	}
+	if !is_c && !good_type_name(name) {
+		p.error('bad struct name, e.g. use `HttpRequest` instead of `HTTPRequest`')  
+	} 
 	// Specify full type name
-	if !is_c && !p.builtin_pkg && p.mod != 'main' {
-		name = p.prepend_pkg(name)
+	if !is_c && !p.builtin_mod && p.mod != 'main' {
+		name = p.prepend_mod(name)
 	}
 	if p.pass == .decl && p.table.known_type(name) {
 		p.error('`$name` redeclared')
@@ -592,6 +626,9 @@ fn (p mut Parser) struct_decl() {
 		if field_name in names {
 			p.error('duplicate field `$field_name`')
 		}
+		if !is_c && p.mod != 'os' && contains_capital(field_name) {
+			p.error('struct fields cannot contain uppercase letters, use snake_case instead')
+		} 
 		names << field_name
 		// We are in an interface?
 		// `run() string` => run is a method, not a struct field
@@ -647,8 +684,8 @@ fn (p mut Parser) struct_decl() {
 fn (p mut Parser) enum_decl(_enum_name string) {
 	mut enum_name := _enum_name
 	// Specify full type name
-	if !p.builtin_pkg && p.mod != 'main' {
-		enum_name = p.prepend_pkg(enum_name)
+	if !p.builtin_mod && p.mod != 'main' {
+		enum_name = p.prepend_mod(enum_name)
 	}
 	// Skip empty enums
 	if enum_name != 'int' {
@@ -787,7 +824,7 @@ fn (p mut Parser) get_type() string {
 		if debug {
 			println('\nget_type() .key_goT FN TYP line=$p.scanner.line_nr')
 		}
-		mut f := Fn{name: '_', pkg: p.mod}
+		mut f := Fn{name: '_', mod: p.mod}
 		p.next()
 		line_nr := p.scanner.line_nr
 		p.fn_args(mut f)
@@ -848,7 +885,7 @@ fn (p mut Parser) get_type() string {
 		}
 	}
 	// map[string]int 
-	if !p.builtin_pkg && p.tok == .name && p.lit == 'map' {
+	if !p.builtin_mod && p.tok == .name && p.lit == 'map' {
 		p.next()
 		p.check(.lsbr) 
 		key_type := p.check_name() 
@@ -884,19 +921,19 @@ fn (p mut Parser) get_type() string {
 		typ = p.lit
 	}
 	else {
-		// Package specified? (e.g. gx.Image)
+		// Module specified? (e.g. gx.Image)
 		if p.peek() == .dot {
 			p.next()
 			p.check(.dot)
 			typ += '__$p.lit'
 		}
 		mut t := p.table.find_type(typ)
-		// "typ" not found? try "pkg__typ"
-		if t.name == '' && !p.builtin_pkg {
+		// "typ" not found? try "mod__typ"
+		if t.name == '' && !p.builtin_mod {
 			// && !p.first_pass() {
 			if !typ.contains('array_') && p.mod != 'main' && !typ.contains('__') &&
 				!typ.starts_with('[') { 
-				typ = p.prepend_pkg(typ)
+				typ = p.prepend_mod(typ)
 			}
 			t = p.table.find_type(typ)
 			if t.name == '' && !p.pref.translated && !p.first_pass() && !typ.starts_with('[') {
@@ -939,7 +976,7 @@ fn (p mut Parser) get_type() string {
 		return 'byte*'
 	}
 	if typ == 'voidptr' {
-		//if !p.builtin_pkg && p.mod != 'os' && p.mod != 'gx' && p.mod != 'gg' && !p.pref.translated {
+		//if !p.builtin_mod && p.mod != 'os' && p.mod != 'gx' && p.mod != 'gg' && !p.pref.translated {
 			//p.error('voidptr can only be used in unsafe code')
 		//}
 		return 'void*'
@@ -1016,29 +1053,34 @@ fn (p mut Parser) close_scope() {
 	// Move back `var_idx` (pointer to the end of the array) till we reach the previous scope level.
 	// This effectivly deletes (closes) current scope.
 	mut i := p.cur_fn.var_idx - 1
-	for; i >= 0; i-- {
+	for ; i >= 0; i-- {
 		v := p.cur_fn.local_vars[i]
 		if v.scope_level != p.cur_fn.scope_level {
 			// println('breaking. "$v.name" v.scope_level=$v.scope_level')
 			break
 		}
-		if !p.building_v && !v.is_mut && v.is_alloc {
+		if false && !p.building_v && !v.is_mut && v.is_alloc {
 			if v.typ.starts_with('array_') { 
 				p.genln('v_array_free($v.name); // close_scope free') 
 			} 
 			else if v.typ == 'string' { 
 				p.genln('v_string_free($v.name); // close_scope free') 
 			} 
-			else { 
-				p.genln('free($v.name); // close_scope free') 
+			else if v.ptr {
+				//p.genln('free($v.name); // close_scope free') 
 			} 
-		} 
-
+		}
 	}
+
+	if p.cur_fn.defer_text.last() != '' {
+		p.genln(p.cur_fn.defer_text.last())
+		//p.cur_fn.defer_text[f] = ''
+	}
+	
+	p.cur_fn.close_scope()
 	p.cur_fn.var_idx = i + 1
 	// println('close_scope new var_idx=$f.var_idx\n')
-	p.cur_fn.scope_level--
-} 
+}
 
 fn (p mut Parser) genln(s string) {
 	p.cgen.genln(s)
@@ -1154,8 +1196,10 @@ fn (p mut Parser) statement(add_semi bool) string {
 // this can be `user = ...`  or `user.field = ...`, in both cases `v` is `user`
 fn (p mut Parser) assign_statement(v Var, ph int, is_map bool) {
 	p.log('assign_statement() name=$v.name tok=')
+	is_vid := p.fileis('vid') // TODO remove 
 	tok := p.tok
-	if !v.is_mut && !v.is_arg && !p.pref.translated && !v.is_global{
+	//if !v.is_mut && !v.is_arg && !p.pref.translated && !v.is_global{
+	if !v.is_mut && !p.pref.translated && !v.is_global && !is_vid {
 		p.error('`$v.name` is immutable')
 	}
 	if !v.is_changed {
@@ -1190,7 +1234,7 @@ fn (p mut Parser) assign_statement(v Var, ph int, is_map bool) {
 		//p.cgen.cur_line = left + 'opt_ok($expr)'
 		p.cgen.resetln(left + 'opt_ok($expr, sizeof($expr_type))')
 	}
-	else if !p.builtin_pkg && !p.check_types_no_throw(expr_type, p.assigned_type) {
+	else if !p.builtin_mod && !p.check_types_no_throw(expr_type, p.assigned_type) {
 		p.scanner.line_nr--
 		p.error('cannot use type `$expr_type` as type `$p.assigned_type` in assignment')
 	}
@@ -1221,7 +1265,7 @@ fn (p mut Parser) var_decl() {
 	p.var_decl_name = name 
 	// Don't allow declaring a variable with the same name. Even in a child scope
 	// (shadowing is not allowed)
-	if !p.builtin_pkg && p.cur_fn.known_var(name) {
+	if !p.builtin_mod && p.cur_fn.known_var(name) {
 		v := p.cur_fn.find_var(name)
 		p.error('redefinition of `$name`')
 	}
@@ -1277,10 +1321,25 @@ fn (p mut Parser) var_decl() {
 	p.var_decl_name = '' 
 }
 
+const (
+	and_or_error = 'use `()` to make the boolean expression clear\n' +
+'for example: `(a && b) || c` instead of `a && b || c`'
+) 
+
 fn (p mut Parser) bool_expression() string {
 	tok := p.tok
 	typ := p.bterm()
+	mut got_and := false // to catch `a && b || c` in one expression without () 
+	mut got_or := false 
 	for p.tok == .and || p.tok == .logical_or {
+		if p.tok == .and {
+			got_and = true 
+			if got_or { p.error(and_or_error) } 
+		} 
+		if p.tok == .logical_or {
+			got_or = true 
+			if got_and { p.error(and_or_error) } 
+		} 
 		p.gen(' ${p.tok.str()} ')
 		p.check_space(p.tok) 
 		p.check_types(p.bterm(), typ)
@@ -1345,7 +1404,7 @@ fn (p mut Parser) name_expr() string {
 		p.next()
 	}
 	if deref {
-		if p.pref.is_play && !p.builtin_pkg {
+		if p.pref.is_play && !p.builtin_mod {
 			p.error('dereferencing is temporarily disabled on the playground, will be fixed soon')
 		}
 	}
@@ -1383,23 +1442,23 @@ fn (p mut Parser) name_expr() string {
 	// //////////////////////////
 	// module ?
 	// Allow shadowing (gg = gg.newcontext(); gg.draw_triangle())
-	if ((name == p.mod && p.table.known_pkg(name)) || p.import_table.known_alias(name))
+	if ((name == p.mod && p.table.known_mod(name)) || p.import_table.known_alias(name))
 		&& !p.cur_fn.known_var(name) && !is_c {
-		mut pkg := name
+		mut mod := name
 		// must be aliased module
 		if name != p.mod && p.import_table.known_alias(name) {
 			// we replaced "." with "_dot_" in p.mod for C variable names, do same here.
-			pkg = p.import_table.resolve_alias(name).replace('.', '_dot_')
+			mod = p.import_table.resolve_alias(name).replace('.', '_dot_')
 		}
 		p.next()
 		p.check(.dot)
 		name = p.lit
 		p.fgen(name)
-		name = prepend_pkg(pkg, name)
+		name = prepend_mod(mod, name)
 	}
 	else if !p.table.known_type(name) && !p.cur_fn.known_var(name) &&
 	!p.table.known_fn(name) && !p.table.known_const(name) && !is_c {
-		name = p.prepend_pkg(name)
+		name = p.prepend_mod(name)
 	}
 	// Variable
 	mut v := p.cur_fn.find_var(name)
@@ -1467,7 +1526,7 @@ fn (p mut Parser) name_expr() string {
 			return enum_type.name
 		}
 		else if p.peek() == .lcbr {
-			// go back to name start (pkg.name)
+			// go back to name start (mod.name)
 /* 
 			p.scanner.pos = hack_pos
 			p.tok = hack_tok
@@ -1488,8 +1547,14 @@ fn (p mut Parser) name_expr() string {
 			return p.struct_init(name, is_c_struct_init)
 		}
 	}
-	// C fn
 	if is_c {
+		// C const (`C.GLFW_KEY_LEFT`) 
+		if p.peek() != .lpar {
+			p.gen(name) 
+			p.next() 
+			return 'int' 
+		}  
+		// C fn
 		f := Fn {
 			name: name// .replace('c_', '')
 			is_c: true
@@ -1532,9 +1597,9 @@ fn (p mut Parser) name_expr() string {
 				f = p.table.find_fn(name) 
 			} 
 			if f.name == '' { 
-				// If orig_name is a pkg, then printing undefined: `pkg` tells us nothing
-				// if p.table.known_pkg(orig_name) {
-				if p.table.known_pkg(orig_name) || p.import_table.known_alias(orig_name) {
+				// If orig_name is a mod, then printing undefined: `mod` tells us nothing
+				// if p.table.known_mod(orig_name) {
+				if p.table.known_mod(orig_name) || p.import_table.known_alias(orig_name) {
 					name = name.replace('__', '.').replace('_dot_', '.')
 					p.error('undefined: `$name`')
 				}
@@ -1677,17 +1742,17 @@ fn (p mut Parser) dot(str_typ string, method_ph int) string {
 			opt_type := typ.name.right(7) 
 			p.error('unhandled option type: $opt_type?')
 		}
-		println('error in dot():')
-		println('fields:')
-		for field in typ.fields {
-			println(field.name)
-		}
-		println('methods:')
-		for field in typ.methods {
-			println(field.name)
-		}
-		println('str_typ=="$str_typ"')
-		p.error('type `$typ.name`  has no field or method `$field_name`')
+		//println('error in dot():')
+		//println('fields:')
+		//for field in typ.fields {
+			//println(field.name)
+		//}
+		//println('methods:')
+		//for field in typ.methods {
+			//println(field.name)
+		//}
+		//println('str_typ=="$str_typ"')
+		p.error('type `$typ.name` has no field or method `$field_name`')
 	}
 	mut dot := '.'
 	if str_typ.contains('*') {
@@ -1699,22 +1764,22 @@ fn (p mut Parser) dot(str_typ string, method_ph int) string {
 		// Is the next token `=`, `+=` etc?  (Are we modifying the field?)
 		next := p.peek()
 		modifying := next.is_assign() || next == .inc || next == .dec
-		is_vi := p.fileis('vi')
-		if !p.builtin_pkg && !p.pref.translated && modifying && !field.is_mut && !is_vi {
+		is_vi := p.fileis('vid')
+		if !p.builtin_mod && !p.pref.translated && modifying && !field.is_mut && !is_vi {
 			p.error('cannot modify immutable field `$field_name` (type `$typ.name`)')
 		}
-		if !p.builtin_pkg && p.mod != typ.mod {
+		if !p.builtin_mod && p.mod != typ.mod {
 		}
-		// if p.pref.is_play && field.access_mod ==.private && !p.builtin_pkg && p.mod != typ.mod {
+		// if p.pref.is_play && field.access_mod ==.private && !p.builtin_mod && p.mod != typ.mod {
 		// Don't allow `arr.data`
-		if field.access_mod == .private && !p.builtin_pkg && !p.pref.translated && p.mod != typ.mod {
+		if field.access_mod == .private && !p.builtin_mod && !p.pref.translated && p.mod != typ.mod {
 			// println('$typ.name :: $field.name ')
 			// println(field.access_mod)
 			p.error('cannot refer to unexported field `$field_name` (type `$typ.name`)')
 		}
-		// if field.access_mod ==.public && p.peek() == .assign && !p.builtin_pkg && p.mod != typ.mod {
+		// if field.access_mod ==.public && p.peek() == .assign && !p.builtin_mod && p.mod != typ.mod {
 		// Don't allow `str.len = 0`
-		if field.access_mod == .public && !p.builtin_pkg && p.mod != typ.mod {
+		if field.access_mod == .public && !p.builtin_mod && p.mod != typ.mod {
 			if !field.is_mut && !p.pref.translated && modifying {
 				p.error('cannot modify public immutable field `$field_name` (type `$typ.name`)')
 			}
@@ -1741,7 +1806,8 @@ fn (p mut Parser) dot(str_typ string, method_ph int) string {
 	return method.typ
 }
 
-fn (p mut Parser) index_expr(typ string, fn_ph int) string {
+fn (p mut Parser) index_expr(typ_ string, fn_ph int) string {
+	mut typ := typ_ 
 	// a[0]
 	v := p.expr_var
 	//if p.fileis('fn_test.v') {
@@ -1765,8 +1831,8 @@ fn (p mut Parser) index_expr(typ string, fn_ph int) string {
 		if is_str {
 			typ = 'byte'
 			p.fgen('[')
-			// Direct faster access to .str[i] in builtin package
-			if p.builtin_pkg {
+			// Direct faster access to .str[i] in builtin modules
+			if p.builtin_mod {
 				p.gen('.str[')
 				close_bracket = true
 			}
@@ -1816,7 +1882,7 @@ fn (p mut Parser) index_expr(typ string, fn_ph int) string {
 				typ = 'void*'
 			}
 			// No bounds check in translated from C code
-			if p.pref.translated && !p.builtin_pkg{
+			if p.pref.translated && !p.builtin_mod{
 				// Cast void* to typ*: add (typ*) to the beginning of the assignment :
 				// ((int*)a.data = ...
 				p.cgen.set_placeholder(fn_ph, '(($typ*)(')
@@ -1848,7 +1914,7 @@ fn (p mut Parser) index_expr(typ string, fn_ph int) string {
 			p.expression()
 		}
 		p.check(.rsbr)
-		// if (is_str && p.builtin_pkg) || is_ptr || is_fixed_arr && ! (is_ptr && is_arr) {
+		// if (is_str && p.builtin_mod) || is_ptr || is_fixed_arr && ! (is_ptr && is_arr) {
 		if close_bracket {
 			p.gen(']/*r$typ $v.is_mut*/')
 		}
@@ -1860,7 +1926,7 @@ fn (p mut Parser) index_expr(typ string, fn_ph int) string {
 	p.tok == .mult_assign || p.tok == .div_assign || p.tok == .xor_assign || p.tok == .mod_assign ||
 	p.tok == .or_assign || p.tok == .and_assign || p.tok == .righ_shift_assign ||
 	p.tok == .left_shift_assign {
-		if is_indexer && is_str && !p.builtin_pkg {
+		if is_indexer && is_str && !p.builtin_mod {
 			p.error('strings are immutable')
 		}
 		assign_pos := p.cgen.cur_line.len
@@ -1898,7 +1964,7 @@ fn (p mut Parser) index_expr(typ string, fn_ph int) string {
 	// p.error('didnt assign')
 	// }
 	// m[key]. no =, just a getter
-	else if (is_map || is_arr || (is_str && !p.builtin_pkg)) && is_indexer {
+	else if (is_map || is_arr || (is_str && !p.builtin_mod)) && is_indexer {
 		// Erase var name we generated earlier:	"int a = m, 0"
 		// "m, 0" gets killed since we need to start from scratch. It's messy.
 		// "m, 0" is an index expression, save it before deleting and insert later in map_get()
@@ -1916,7 +1982,7 @@ fn (p mut Parser) index_expr(typ string, fn_ph int) string {
 			p.cgen.insert_before('$typ $tmp = $def; bool $tmp_ok = map_get($index_expr, & $tmp);')
 		}
 		else if is_arr {
-			if p.pref.translated && !p.builtin_pkg {
+			if p.pref.translated && !p.builtin_mod {
 				p.gen('$index_expr ]')
 			}
 			else {
@@ -1927,7 +1993,7 @@ fn (p mut Parser) index_expr(typ string, fn_ph int) string {
 				} 
 			}
 		}
-		else if is_str && !p.builtin_pkg {
+		else if is_str && !p.builtin_mod {
 			p.gen('string_at($index_expr)')
 		}
 		// Zero the string after map_get() if it's nil, numbers are automatically 0
@@ -2241,6 +2307,10 @@ fn (p mut Parser) factor() string {
 		// everything should do next()
 		return p.array_init()
 	case Token.lcbr:
+		// `m := { 'one': 1 }` 
+		if p.peek() == .str {
+			return p.map_init() 
+		} 
 		// { user | name :'new name' }
 		return p.assoc()
 	case Token.key_if:
@@ -2299,8 +2369,8 @@ fn (p mut Parser) char_expr() {
 }
 
 
-fn format_str(str string) string {
-	str = str.replace('"', '\\"')
+fn format_str(_str string) string {
+	mut str := _str.replace('"', '\\"')
 	$if windows {
 		str = str.replace('\r\n', '\\n')
 	} 
@@ -2415,7 +2485,46 @@ fn (p mut Parser) string_expr() {
 }
 
 // m := map[string]int{}
+// m := { 'one': 1 } 
 fn (p mut Parser) map_init() string {
+	// m := { 'one': 1, 'two': 2 } 
+	mut keys_gen := '' // (string[]){tos2("one"), tos2("two")} 
+	mut vals_gen := '' // (int[]){1, 2} 
+	mut val_type := ''  // 'int' 
+	if p.tok == .lcbr {
+		p.check(.lcbr)
+		mut i := 0 
+		for { 
+			key := p.lit 
+			keys_gen += 'tos2("$key"), ' 
+			p.check(.str) 
+			p.check(.colon) 
+			p.cgen.start_tmp() 
+			t := p.bool_expression() 
+			if i == 0 { 
+				val_type = t 
+			} 
+			i++ 
+			if val_type != t {
+				if !p.check_types_no_throw(val_type, t) {
+					p.error('bad map element type `$val_type` instead of `$t`')
+				}
+			}
+			val_expr := p.cgen.end_tmp() 
+			vals_gen += '$val_expr, ' 
+			if p.tok == .rcbr {
+				p.check(.rcbr) 
+				break 
+			} 
+			if p.tok == .comma {
+				p.check(.comma)
+			} 
+		} 
+		p.gen('new_map_init($i, sizeof($val_type), ' +
+			'(string[]){ $keys_gen }, ($val_type []){ $vals_gen } )') 
+		typ := 'map_$val_type' 
+		return typ 
+	} 
 	p.next()
 	p.check(.lsbr)
 	key_type := p.check_name()
@@ -2423,7 +2532,7 @@ fn (p mut Parser) map_init() string {
 		p.error('only string key maps allowed for now')
 	}
 	p.check(.rsbr)
-	val_type := p.check_name()
+	val_type = p.check_name()
 	if !p.table.known_type(val_type) {
 		p.error('map init unknown type "$val_type"')
 	}
@@ -2435,11 +2544,20 @@ fn (p mut Parser) map_init() string {
 	return typ
 }
 
-// [1,2,3]
+// `nums := [1, 2, 3]` 
 fn (p mut Parser) array_init() string {
 	p.is_alloc = true 
 	p.check(.lsbr)
-	is_integer := p.tok == .number
+	mut is_integer := p.tok == .number  // for `[10]int` 
+	// fixed length arrays with a const len: `nums := [N]int`, same as `[10]int` basically 
+	mut is_const_len := false 
+	if p.tok == .name {
+		c := p.table.find_const(p.prepend_mod(p.lit)) 
+		if c.name != '' && c.typ == 'int' && p.peek() == .rsbr && !p.inside_const {
+			is_integer = true 
+			is_const_len = true 
+		} 
+	} 
 	lit := p.lit
 	mut typ := ''
 	new_arr_ph := p.cgen.add_placeholder()
@@ -2461,6 +2579,9 @@ fn (p mut Parser) array_init() string {
 					if p.table.known_type(name) {
 						p.cgen.resetln('')
 						p.gen('STRUCT_DEFAULT_VALUE')
+						if is_const_len { 
+							return '[${p.mod}__$lit]$name' 
+						} 
 						return '[$lit]$name'
 					}
 					else {
@@ -2628,7 +2749,7 @@ fn (p mut Parser) struct_init(typ string, is_c_struct_init bool) string {
 				continue
 			}
 			field_typ := field.typ
-			if !p.builtin_pkg && field_typ.ends_with('*') && field_typ.contains('Cfg') {
+			if !p.builtin_mod && field_typ.ends_with('*') && field_typ.contains('Cfg') {
 				p.error('pointer field `${typ}.${field.name}` must be initialized')
 			}
 			def_val := type_default(field_typ)
@@ -3086,10 +3207,10 @@ fn (p mut Parser) assert_statement() {
 	p.gen('bool $tmp = ')
 	p.check_types(p.bool_expression(), 'bool')
 	// TODO print "expected:  got" for failed tests
-	filename := p.file_path
+	filename := p.file_path.replace('\\', '\\\\')
 	p.genln(';\n 
-if (!$tmp) { 
-  puts("\\x1B[31mFAILED: $p.cur_fn.name() in $filename:$p.scanner.line_nr\\x1B[0m");  
+if (!$tmp) {
+  println(tos2("\\x1B[31mFAILED: $p.cur_fn.name() in $filename:$p.scanner.line_nr\\x1B[0m"));
 g_test_ok = 0 ; 
 	// TODO
 	// Maybe print all vars in a test function if it fails? 
@@ -3121,13 +3242,27 @@ fn (p mut Parser) return_st() {
 			}
 			else {
 				ret := p.cgen.cur_line.right(ph)
-				p.cgen(p.cur_fn.defer_text) 
-				if p.cur_fn.defer_text == '' || expr_type == 'void*' { 
+
+				// @emily33901: Scoped defer
+				// Check all of our defer texts to see if there is one at a higher scope level
+				// The one for our current scope would be the last so any before that need to be
+				// added.
+
+				mut total_text := ''
+
+				for text in p.cur_fn.defer_text {
+					if text != '' {
+						// In reverse order
+						total_text = text + total_text
+					}
+				}
+
+				if total_text == '' || expr_type == 'void*' {
 					p.cgen.resetln('return $ret')
 				}  else { 
 					tmp := p.get_tmp() 
 					p.cgen.resetln('$expr_type $tmp = $ret;\n')
-					p.genln(p.cur_fn.defer_text) 
+					p.genln(total_text)
 					p.genln('return $tmp;') 
 				} 
 			}
@@ -3150,12 +3285,12 @@ fn (p mut Parser) return_st() {
 	p.returns = true
 }
 
-fn prepend_pkg(pkg, name string) string {
-	return '${pkg}__${name}'
+fn prepend_mod(mod, name string) string {
+	return '${mod}__${name}'
 }
 
-fn (p &Parser) prepend_pkg(name string) string {
-	return prepend_pkg(p.mod, name)
+fn (p &Parser) prepend_mod(name string) string {
+	return prepend_mod(p.mod, name)
 }
 
 fn (p mut Parser) go_statement() {
@@ -3185,9 +3320,11 @@ fn (p mut Parser) go_statement() {
 
 fn (p mut Parser) register_var(v Var) {
 	if v.line_nr == 0 {
-		v.line_nr = p.scanner.line_nr
-	}
-	p.cur_fn.register_var(v)
+		//v.line_nr = p.scanner.line_nr
+		p.cur_fn.register_var({ v | line_nr: p.scanner.line_nr }) 
+	} else { 
+		p.cur_fn.register_var(v)
+	} 
 }
 
 // user:=jsdecode(User, user_json_string)
@@ -3217,7 +3354,7 @@ fn (p mut Parser) js_decode() string {
 		for field in T.fields {
 			def_val := type_default(field.typ)
 			if def_val != '' {
-				decl += '$tmp . $field.name = $def_val;\n'
+				decl += '$tmp . $field.name = OPTION_CAST($field.typ) $def_val;\n'
 			}
 		}
 		p.gen_json_for_type(T)
@@ -3279,9 +3416,14 @@ fn (p mut Parser) defer_st() {
 
 	// Save everything inside the defer block to `defer_text`.
 	// It will be inserted before every `return`
+
+	// Emily: TODO: all variables that are used in this defer statement need to be evaluated when the block
+	// is defined otherwise they could change over the course of the function
+	// (make temps out of them)
+
 	p.genln('{') 
 	p.statements() 
-	p.cur_fn.defer_text = p.cgen.lines.right(pos).join('\n') + p.cur_fn.defer_text 
+	p.cur_fn.defer_text.last() = p.cgen.lines.right(pos).join('\n') + p.cur_fn.defer_text.last()
 
 	// Rollback p.cgen.lines
 	p.cgen.lines = p.cgen.lines.left(pos)

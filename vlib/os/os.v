@@ -190,13 +190,11 @@ pub fn read_lines(path string) []string {
 			buf_index = len
 			continue
 		}
-		if buf[len - 1] == 10 {
+		if buf[len - 1] == 10 || buf[len - 1] == 13 {
 			buf[len - 1] = `\0`
 		}
-		$if windows {
-			if buf[len - 2] == 13 {
-				buf[len - 2] = `\0`
-			}
+		if len > 1 && buf[len - 2] == 13 {
+			buf[len - 2] = `\0`
 		}
 		res << tos_clone(buf)
 		buf_index = 0
@@ -339,8 +337,8 @@ fn popen(path string) *FILE {
 }
 
 // exec starts the specified command, waits for it to complete, and returns its output.
-pub fn exec(cmd string) string {
-	cmd = '$cmd 2>&1'
+pub fn exec(_cmd string) string {
+	cmd := '$_cmd 2>&1'
 	f := popen(cmd)
 	if isnil(f) {
 		// TODO optional or error code 
@@ -399,19 +397,19 @@ pub fn unsetenv(name string) int {
 }
 
 // `file_exists` returns true if `path` exists.
-pub fn file_exists(path string) bool {
+pub fn file_exists(_path string) bool {
 	$if windows {
-		path = path.replace('/', '\\')
-		return C._waccess( path.to_wide(), 0 ) != -1
+		path := _path.replace('/', '\\')
+		return C._waccess(path.to_wide(), 0) != -1
 	} $else {
-		return C.access( path.str, 0 ) != -1
+		return C.access(_path.str, 0 ) != -1
 	}
 }
 
 pub fn dir_exists(path string) bool {
 	$if windows {
-		path = path.replace('/', '\\')
-		attr := int(C.GetFileAttributes(path.to_wide()))
+		_path := path.replace('/', '\\')
+		attr := int(C.GetFileAttributes(_path.to_wide()))
 		if attr == INVALID_FILE_ATTRIBUTES {
 			return false
 		}
@@ -433,13 +431,13 @@ pub fn dir_exists(path string) bool {
 // mkdir creates a new directory with the specified path.
 pub fn mkdir(path string) {
 	$if windows {
-		path = path.replace('/', '\\')
+		_path := path.replace('/', '\\')
 		// Windows doesnt recursively create the folders
 		// so we need to help it out here
-		if path.last_index('\\') != -1 {
-			mkdir(path.all_before_last('\\'))
+		if _path.last_index('\\') != -1 {
+			mkdir(_path.all_before_last('\\'))
 		}
-		C.CreateDirectory(path.to_wide(), 0)
+		C.CreateDirectory(_path.to_wide(), 0)
 	}
 	$else {
 		C.mkdir(path.str, 511)// S_IRWXU | S_IRWXG | S_IRWXO
@@ -485,6 +483,9 @@ pub fn ext(path string) string {
 
 // dir returns all but the last element of path, typically the path's directory.  
 pub fn dir(path string) string {
+	if path == '.' {
+		return getwd() 
+	} 
 	mut pos := -1
 	// TODO PathSeparator defined in os_win.v doesn't work when building V, 
 	// because v.c is generated for a nix system. 
@@ -691,9 +692,9 @@ pub fn executable() string {
 	}
 	$if freebsd {
 		mut result := malloc(MAX_PATH)
-		mut mib := [1 /* CTL_KERN */, 14 /* KERN_PROC */, 12 /* KERN_PROC_PATHNAME */, -1]!! 
+		mib := [1 /* CTL_KERN */, 14 /* KERN_PROC */, 12 /* KERN_PROC_PATHNAME */, -1] 
 		size := MAX_PATH 
-		C.sysctl(mib, 4, result, &size, 0, 0) 
+		C.sysctl(mib.data, 4, result, &size, 0, 0) 
 		return string(result) 
 	} 
 	$if openbsd {

@@ -7,7 +7,8 @@
 // SHA-1 is cryptographically broken and should not be used for secure
 // applications.
 
-// Adapted from: https://github.com/golang/go/blob/master/src/crypto/sha1
+// Based off:   https://github.com/golang/go/blob/master/src/crypto/sha1
+// Last commit: https://github.com/golang/go/commit/3ce865d7a0b88714cc433454ae2370a105210c01 
 
 module sha1
 
@@ -57,7 +58,8 @@ pub fn new() &Digest {
 	return d
 }
 
-pub fn (d mut Digest) write(p []byte) ?int {
+pub fn (d mut Digest) write(p_ []byte) ?int {
+	mut p := p_
 	nn := p.len
 	d.len += u64(nn)
 
@@ -114,16 +116,16 @@ fn (d mut Digest) checksum() []byte {
 
 	// Length in bits.
 	len <<= u64(3)
-	binary.big_endian_put_u64(tmp, len)
+	binary.big_endian_put_u64(mut tmp, len)
 	d.write(tmp.left(8))
 
 	mut digest := [byte(0); Size]
 
-	binary.big_endian_put_u32(digest, d.h[0])
-	binary.big_endian_put_u32(digest.right(4), d.h[1])
-	binary.big_endian_put_u32(digest.right(8), d.h[2])
-	binary.big_endian_put_u32(digest.right(12), d.h[3])
-	binary.big_endian_put_u32(digest.right(16), d.h[4])
+	binary.big_endian_put_u32(mut digest, d.h[0])
+	binary.big_endian_put_u32(mut digest.right(4), d.h[1])
+	binary.big_endian_put_u32(mut digest.right(8), d.h[2])
+	binary.big_endian_put_u32(mut digest.right(12), d.h[3])
+	binary.big_endian_put_u32(mut digest.right(16), d.h[4])
 
 	return digest
 }
@@ -138,7 +140,7 @@ pub fn sum(data []byte) []byte {
 fn block(dig &Digest, p []byte) {
 	// For now just use block_generic until we have specific
 	// architecture optimized versions
-	block_generic(dig, p)
+	block_generic(mut dig, p)
 }
 
 pub fn (d &Digest) size() int { return Size }

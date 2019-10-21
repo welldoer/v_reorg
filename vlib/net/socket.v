@@ -188,7 +188,7 @@ pub fn (s Socket) connect(address string, port int) ?int {
 	if info_res != 0 {
 		return error('socket: connect failed')
 	}
-	res := C.connect(s.sockfd, info.ai_addr, info.ai_addrlen)
+	res := int(C.connect(s.sockfd, info.ai_addr, info.ai_addrlen))
 	if res < 0 {
 		return error('socket: connect failed')
 	}
@@ -227,11 +227,6 @@ pub fn (s Socket) recv(bufsize int) byteptr {
 
 // shutdown and close socket
 pub fn (s Socket) close() ?int {
-	// WinSock
-	$if windows {
-		C.WSACleanup()
-	}
-
 	mut shutdown_res := 0
 	$if windows {
 		shutdown_res = C.shutdown(s.sockfd, SD_BOTH)

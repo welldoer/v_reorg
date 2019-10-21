@@ -9,16 +9,17 @@ import strings
 
 struct Table {
 mut:
-	types     []Type
-	consts    []Var
-	fns       map[string]Fn 
-	generic_fns []GenTable //map[string]GenTable // generic_fns['listen_and_serve'] == ['Blog', 'Forum'] 
-	obf_ids   map[string]int // obf_ids['myfunction'] == 23
-	packages  []string // List of all modules registered by the application
-	imports   []string // List of all imports
-	flags     []string //  ['-framework Cocoa', '-lglfw3']
-	fn_cnt    int atomic
-	obfuscate bool
+	types        []Type
+	consts       []Var
+	fns          map[string]Fn 
+	generic_fns  []GenTable //map[string]GenTable // generic_fns['listen_and_serve'] == ['Blog', 'Forum'] 
+	obf_ids      map[string]int // obf_ids['myfunction'] == 23
+	modules      []string // List of all modules registered by the application
+	imports      []string // List of all imports
+	file_imports []FileImportTable // List of imports for file
+	flags        []string //  ['-framework Cocoa', '-lglfw3']
+	fn_cnt       int atomic
+	obfuscate    bool
 }
 
 struct GenTable {
@@ -117,16 +118,16 @@ fn (t &Table) debug_fns() string {
 // fn (types array_Type) print_to_file(f string)  {
 // }
 const (
-	NUMBER_TYPES = ['number', 'int', 'i8', 'u8', 'i16', 'u16', 'i32', 'u32', 'byte', 'i64', 'u64', 'f32', 'f64']
-	FLOAT_TYPES  = ['f32', 'f64']
+	number_types = ['number', 'int', 'i8', 'u8', 'i16', 'u16', 'i32', 'u32', 'byte', 'i64', 'u64', 'f32', 'f64']
+	float_types  = ['f32', 'f64']
 )
 
 fn is_number_type(typ string) bool {
-	return NUMBER_TYPES.contains(typ)
+	return typ in number_types 
 }
 
 fn is_float_type(typ string) bool {
-	return FLOAT_TYPES.contains(typ)
+	return typ in float_types 
 }
 
 fn is_primitive_type(typ string) bool {
@@ -140,6 +141,7 @@ fn new_table(obfuscate bool) *Table {
 		//generic_fns: map[string]GenTable{} 
 		generic_fns: []GenTable 
 		obfuscate: obfuscate
+		file_imports: []FileImportTable
 	}
 	t.register_type('int')
 	t.register_type('size_t')
@@ -181,11 +183,11 @@ fn (t mut Table) var_cgen_name(name string) string {
 	}
 }
 
-fn (t mut Table) register_package(pkg string) {
-	if t.packages.contains(pkg) {
+fn (t mut Table) register_module(mod string) {
+	if t.modules.contains(mod) {
 		return
 	}
-	t.packages << pkg
+	t.modules << mod
 }
 
 fn (p mut Parser) register_array(typ string) {
@@ -210,8 +212,8 @@ fn (p mut Parser) register_map(typ string) {
 	}
 }
 
-fn (table &Table) known_pkg(pkg string) bool {
-	return pkg in table.packages
+fn (table &Table) known_mod(mod string) bool {
+	return mod in table.modules
 }
 
 fn (t mut Table) register_const(name, typ, mod string, is_imported bool) {
@@ -232,6 +234,7 @@ fn (p mut Parser) register_global(name, typ string) {
 		is_const: true
 		is_global: true
 		mod: p.mod 
+		is_mut: true 
 	}
 }
 
@@ -239,7 +242,8 @@ fn (t mut Table) register_fn(new_fn Fn) {
 	t.fns[new_fn.name] = new_fn 
 }
 
-fn (table &Table) known_type(typ string) bool {
+fn (table &Table) known_type(typ_ string) bool {
+	mut typ := typ_ 
 	// 'byte*' => look up 'byte', but don't mess up fns
 	if typ.ends_with('*') && !typ.contains(' ') {
 		typ = typ.left(typ.len - 1)
@@ -308,9 +312,9 @@ fn (t mut Table) register_type_with_parent(typ, parent string) {
 		}
 	}
 	/*
-mut pkg := ''
+mut mod := ''
 if parent == 'array' {
-pkg = 'builtin'
+mod = 'builtin'
 }
 */
 	t.types << Type { 
@@ -433,12 +437,13 @@ fn (t mut Type) add_gen_type(type_name string) {
 fn (p &Parser) find_type(name string) *Type {
 	typ := p.table.find_type(name)
 	if typ.name.len == 0 {
-		return p.table.find_type(p.prepend_pkg(name))
+		return p.table.find_type(p.prepend_mod(name))
 	}
 	return typ
 }
 
-fn (t &Table) find_type(name string) *Type {
+fn (t &Table) find_type(name_ string) *Type {
+	mut name := name_ 
 	if name.ends_with('*') && !name.contains(' ') {
 		name = name.left(name.len - 1)
 	}
@@ -451,7 +456,9 @@ fn (t &Table) find_type(name string) *Type {
 	return &Type{}
 }
 
-fn (p mut Parser) _check_types(got, expected string, throw bool) bool {
+fn (p mut Parser) _check_types(got_, expected_ string, throw bool) bool {
+	mut got := got_ 
+	mut expected := expected_ 
 	p.log('check types got="$got" exp="$expected"  ')
 	if p.pref.translated {
 		return true
@@ -481,7 +488,7 @@ fn (p mut Parser) _check_types(got, expected string, throw bool) bool {
 	}
 	// Todo void* allows everything right now
 	if got=='void*' || expected=='void*' {
-		// if !p.builtin_pkg {
+		// if !p.builtin_mod {
 		if p.pref.is_play {
 			return false
 		}
@@ -501,6 +508,9 @@ fn (p mut Parser) _check_types(got, expected string, throw bool) bool {
 	if got=='int' && expected=='byte*' {
 		return true
 	}
+	//if got=='int' && expected=='voidptr*' {
+		//return true 
+	//} 
 	// byteptr += int
 	if got=='int' && expected=='byteptr' {
 		return true
@@ -576,8 +586,7 @@ fn (p mut Parser) satisfies_interface(interface_name, _typ string, throw bool) b
 
 fn type_default(typ string) string {
 	if typ.starts_with('array_') {
-		typ = typ.right(6)
-		return 'new_array(0, 1, sizeof($typ))'
+		return 'new_array(0, 1, sizeof( ${typ.right(6)} ))'
 	}
 	// Always set pointers to 0
 	if typ.ends_with('*') {
@@ -652,14 +661,14 @@ fn (table mut Table) cgen_name(f &Fn) string {
 	// Avoid name conflicts (with things like abs(), print() etc).
 	// Generate b_abs(), b_print()
 	// TODO duplicate functionality
-	if f.pkg == 'builtin' && CReserved.contains(f.name) {
+	if f.mod == 'builtin' && CReserved.contains(f.name) {
 		return 'v_$name'
 	}
 	// Obfuscate but skip certain names
 	// TODO ugly, fix
-	if table.obfuscate && f.name != 'main' && f.name != 'WinMain' && f.pkg != 'builtin' && !f.is_c &&
-	f.pkg != 'darwin' && f.pkg != 'os' && !f.name.contains('window_proc') && f.name != 'gg__vec2' &&
-	f.name != 'build_token_str' && f.name != 'build_keys' && f.pkg != 'json' &&
+	if table.obfuscate && f.name != 'main' && f.name != 'WinMain' && f.mod != 'builtin' && !f.is_c &&
+	f.mod != 'darwin' && f.mod != 'os' && !f.name.contains('window_proc') && f.name != 'gg__vec2' &&
+	f.name != 'build_token_str' && f.name != 'build_keys' && f.mod != 'json' &&
 	!name.ends_with('_str') && !name.contains('contains') {
 		mut idx := table.obf_ids[name]
 		// No such function yet, register it
@@ -770,8 +779,8 @@ fn (p mut Parser) typ_to_fmt(typ string, level int) string {
 	return ''
 }
 
-fn is_compile_time_const(s string) bool {
-	s = s.trim_space()
+fn is_compile_time_const(s_ string) bool {
+	s := s_.trim_space()
 	if s == '' {
 		return false
 	}

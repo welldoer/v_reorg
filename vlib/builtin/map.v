@@ -4,6 +4,8 @@
 
 module builtin
 
+import strings 
+
 struct map {
 	element_size int
 	root      *Node 
@@ -28,6 +30,18 @@ fn new_map(cap, elm_size int) map {
 	}
 	return res
 }
+
+// `m := { 'one': 1, 'two': 2 }` 
+fn new_map_init(cap, elm_size int, keys *string, vals voidptr) map {
+	mut res := map {
+		element_size: elm_size
+		root: 0 
+	}
+	for i in 0 .. cap {
+		res._set(keys[i], vals + i * elm_size) 
+	} 
+	return res
+} 
 
 fn new_node(key string, val voidptr, element_size int) *Node {
 	new_e := &Node {
@@ -231,16 +245,14 @@ pub fn (m map) free() {
 }
 
 pub fn (m map_string) str() string {
-	// return 'not impl'
 	if m.size == 0 {
 		return '{}'
 	}
-	// TODO use bytes buffer
-	mut s := '{\n'
-	//for key, val  in m { 
-		//val := m[entry.key]
-		//s += '  "$entry.key" => "$val"\n'
-	//}
-	s += '}'
-	return s
+	mut sb := strings.new_builder(50)
+	sb.writeln('{') 
+	for key, val  in m { 
+		sb.writeln('  "$key" => "$val"') 
+	}
+	sb.writeln('}') 
+	return sb.str() 
 }
