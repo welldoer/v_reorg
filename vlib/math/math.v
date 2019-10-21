@@ -4,7 +4,6 @@
 
 module math
 
-#include <math.h>
 
 // NOTE
 // When adding a new function, please make sure it's in the right place.
@@ -204,6 +203,11 @@ pub fn gcd(a, b i64) i64 {
 		b %= a
 	}
 	return a
+}
+
+// Returns hypotenuse of a right triangle.
+pub fn hypot(a, b f64) f64 {
+	return C.hypot(a, b)
 }
 
 // lcm calculates least common (non-negative) multiple.

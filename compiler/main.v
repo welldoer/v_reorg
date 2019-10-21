@@ -195,17 +195,13 @@ fn (v mut V) compile() {
 
 
 #ifdef __APPLE__ 
-
+#include <pthread.h> 
 #endif 
 
 
 #ifdef _WIN32 
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <io.h> // _waccess
-#include <fcntl.h> // _O_U8TEXT
-#include <direct.h> // _wgetcwd
-//#include <WinSock2.h>
+//#include <WinSock2.h> 
 #endif 
 
 //================================== TYPEDEFS ================================*/ 
@@ -256,6 +252,14 @@ byteptr g_str_buf;
 int load_so(byteptr);
 void reload_so();
 void init_consts();')
+	
+	if v.pref.is_so {
+		cgen.genln('pthread_mutex_t live_fn_mutex;')
+	}  
+	if v.pref.is_live {
+		cgen.genln('pthread_mutex_t live_fn_mutex = PTHREAD_MUTEX_INITIALIZER;')
+	}
+	
 	imports_json := v.table.imports.contains('json')
 	// TODO remove global UI hack
 	if v.os == .mac && ((v.pref.build_mode == .embed_vlib && v.table.imports.contains('ui')) ||
@@ -364,7 +368,7 @@ string _STR_TMP(const char *fmt, ...) {
 			// It can be skipped in single file programs
 			if v.pref.is_script {
 				//println('Generating main()...')
-				cgen.genln('int main() { \n#ifdef _WIN32\n _setmode(_fileno(stdout), _O_U8TEXT); \n#endif\n init_consts(); $cgen.fn_main; return 0; }')
+				cgen.genln('int main() { init_consts(); $cgen.fn_main; return 0; }')
 			}
 			else {
 				println('panic: function `main` is undeclared in the main module')
@@ -373,7 +377,7 @@ string _STR_TMP(const char *fmt, ...) {
 		}
 		// Generate `main` which calls every single test function
 		else if v.pref.is_test {
-			cgen.genln('int main() { \n#ifdef _WIN32\n _setmode(_fileno(stdout), _O_U8TEXT); \n#endif\n init_consts();')
+			cgen.genln('int main() { init_consts();')
 			for key, f in v.table.fns { 
 				if f.name.starts_with('test_') {
 					cgen.genln('$f.name();')
@@ -392,33 +396,77 @@ string _STR_TMP(const char *fmt, ...) {
 		vexe := os.args[0] 
 		os.system('$vexe -o $file_base -shared $file') 
 		cgen.genln('
+
+void lfnmutex_print(char *s){
+	if(0){
+		fflush(stderr);
+		fprintf(stderr,">> live_fn_mutex: %p | %s\\n", &live_fn_mutex, s);
+		fflush(stderr);
+	}
+}
+
 #include <dlfcn.h>
-void* live_lib; 
+void* live_lib=0;
 int load_so(byteptr path) {
 	char cpath[1024];
 	sprintf(cpath,"./%s", path);
 	//printf("load_so %s\\n", cpath); 
-	if (live_lib) dlclose(live_lib); 
+	if (live_lib) dlclose(live_lib);
 	live_lib = dlopen(cpath, RTLD_LAZY);
-	if (!live_lib) {puts("open failed"); exit(1); return 0;} 
+	if (!live_lib) {
+		puts("open failed"); 
+		exit(1); 
+		return 0;
+	}
 ')
 		for so_fn in cgen.so_fns {
 			cgen.genln('$so_fn = dlsym(live_lib, "$so_fn");  ')
 		}
-		cgen.genln('return 1; }
- 
+		
+		cgen.genln('return 1; 
+}
+
+int _live_reloads = 0;
 void reload_so() {
+	char new_so_base[1024];
+	char new_so_name[1024];
+	char compile_cmd[1024];
 	int last = os__file_last_mod_unix(tos2("$file"));
 	while (1) {
-		// TODO use inotify 
-		int now = os__file_last_mod_unix(tos2("$file")); 
+		// TODO use inotify
+		int now = os__file_last_mod_unix(tos2("$file"));
 		if (now != last) {
-			//v -o bounce -shared bounce.v 
-			os__system(tos2("$vexe -o $file_base -shared $file")); 
-			last = now; 
-			load_so("$so_name"); 
+			last = now;
+			_live_reloads++;
+
+			//v -o bounce -shared bounce.v
+			sprintf(new_so_base, ".tmp.%d.${file_base}", _live_reloads);
+			sprintf(new_so_name, "%s.so", new_so_base);
+			sprintf(compile_cmd, "$vexe -o %s -shared $file", new_so_base);
+			os__system(tos2(compile_cmd));
+
+			if( !os__file_exists(tos2(new_so_name)) ) {
+				fprintf(stderr, "Errors while compiling $file\\n");
+				continue;        
+			}
+      
+			lfnmutex_print("reload_so locking...");    
+			pthread_mutex_lock(&live_fn_mutex);    
+			lfnmutex_print("reload_so locked");
+        
+			live_lib = 0; // hack: force skipping dlclose/1, the code may be still used...
+			load_so(new_so_name); 
+			unlink(new_so_name); // removing the .so file from the filesystem after dlopen-ing it is safe, since it will still be mapped in memory.
+			//if(0 == rename(new_so_name, "${so_name}")){
+			//	load_so("${so_name}"); 
+			//}
+
+			lfnmutex_print("reload_so unlocking...");  
+			pthread_mutex_unlock(&live_fn_mutex);  
+			lfnmutex_print("reload_so unlocked");
+
 		}
-		time__sleep_ms(400); 
+		time__sleep_ms(100); 
 	}
 }
 ' ) 
@@ -504,7 +552,7 @@ fn (c &V) cc_windows_cross() {
                obj_name = obj_name.replace('.exe', '')
                obj_name = obj_name.replace('.o.o', '.o')
                mut include := '-I $winroot/include '
-               cmd := 'clang -o $obj_name -w $include -DUNICODE -D_UNICODE -m32 -c -target x86_64-win32 $ModPath/$c.out_name_c'
+               cmd := 'clang -o $obj_name -w $include -m32 -c -target x86_64-win32 $ModPath/$c.out_name_c'
                if c.pref.show_c_cmd {
                        println(cmd)
                }
@@ -635,9 +683,6 @@ mut args := ''
 			a << ' -ldl ' 
 		} 
 	}
-	if v.os == .windows {
-		a << '-DUNICODE -D_UNICODE'
-	}
 	// Find clang executable
 	//fast_clang := '/usr/local/Cellar/llvm/8.0.0/bin/clang'
 	args := a.join(' ')
@@ -649,13 +694,22 @@ mut args := ''
 	//}
 	$if windows {
 		cmd = 'gcc $args' 
-	} 
-	// Print the C command
-	if v.pref.show_c_cmd || v.pref.is_verbose {
-		println('\n==========\n$cmd\n=========\n')
+	}
+	if v.out_name.ends_with('.c') {
+		os.mv( '.$v.out_name_c', v.out_name )
+		exit(0)
 	}
 	// Run
+	ticks := time.ticks() 
 	res := os.exec(cmd)
+	diff := time.ticks() - ticks 
+	// Print the C command
+	if v.pref.show_c_cmd || v.pref.is_verbose {
+		println('\n==========')
+		println(cmd) 
+		println('cc took $diff ms') 
+		println('=========\n')
+	}
 	// println('C OUTPUT:')
 	if res.contains('error: ') {
 		println(res)
@@ -758,16 +812,14 @@ fn (v mut V) add_user_v_files() {
 		v.log('user_files:')
 		println(user_files)
 	}
-	// To store the import table for user imports
-	mut user_imports := []FileImportTable
+	// import tables for user/lib files
+	mut file_imports := []FileImportTable
 	// Parse user imports
 	for file in user_files {
 		mut p := v.new_parser(file, Pass.imports)
 		p.parse()
-		user_imports << *p.import_table
+		file_imports << *p.import_table
 	}
-	// To store the import table for lib imports
-	mut lib_imports := []FileImportTable
 	// Parse lib imports
 	if v.pref.build_mode == .default_mode {
 		for i := 0; i < v.table.imports.len; i++ {
@@ -777,7 +829,7 @@ fn (v mut V) add_user_v_files() {
 			for file in vfiles {
 				mut p := v.new_parser(file, Pass.imports)
 				p.parse()
-				lib_imports << *p.import_table
+				file_imports << *p.import_table
 			}
 		}
 	}
@@ -796,7 +848,7 @@ fn (v mut V) add_user_v_files() {
 			for file in vfiles {
 				mut p := v.new_parser(file, Pass.imports)
 				p.parse()
-				lib_imports << *p.import_table
+				file_imports << *p.import_table
 			}
 		}
 	}
@@ -804,38 +856,38 @@ fn (v mut V) add_user_v_files() {
 		v.log('imports:')
 		println(v.table.imports)
 	}
-	// this order is important for declaration
-	mut combined_imports := []FileImportTable
-	for i := lib_imports.len-1; i>=0; i-- {
-		combined_imports << lib_imports[i]
+	// graph deps
+	mut dep_graph := new_mod_dep_graph()
+	dep_graph.from_import_tables(file_imports)
+	deps_resolved := dep_graph.resolve()
+	if !deps_resolved.acyclic {
+		deps_resolved.display()
+		panic('Import cycle detected.')
 	}
-	for i in user_imports {
-		combined_imports << i
-	}
-	// Only now add all combined lib files
-	// adding the modules each file imports first
-	for fit in combined_imports {
-		for _, mod in fit.imports {
-			mod_p := v.module_path(mod)
-			idir := os.getwd()
-			mut module_path := '$idir/$mod_p'
-			// If we are in default mode, we don't parse vlib .v files, but header .vh files in
-			// TmpPath/vlib
-			// These were generated by vfmt
-			if v.pref.build_mode == .default_mode || v.pref.build_mode == .build {
-				module_path = '$ModPath/vlib/$mod_p'
-			}
-			if !os.file_exists(module_path) {
-				module_path = '$v.lang_dir/vlib/$mod_p'
-			}
-			vfiles := v.v_files_from_dir(module_path)
-			for file in vfiles {
-				if !file in v.files {
-					v.files << file
-				}
-			}
-			// TODO v.files.append_array(vfiles)
+	// add imports in correct order
+	for mod in deps_resolved.imports() {
+		mod_p := v.module_path(mod)
+		idir := os.getwd()
+		mut module_path := '$idir/$mod_p'
+		// If we are in default mode, we don't parse vlib .v files, but header .vh files in
+		// TmpPath/vlib
+		// These were generated by vfmt
+		if v.pref.build_mode == .default_mode || v.pref.build_mode == .build {
+			module_path = '$ModPath/vlib/$mod_p'
 		}
+		if !os.file_exists(module_path) {
+			module_path = '$v.lang_dir/vlib/$mod_p'
+		}
+		vfiles := v.v_files_from_dir(module_path)
+		for file in vfiles {
+			if !file in v.files {
+				v.files << file
+			}
+		}
+		// TODO v.files.append_array(vfiles)
+	}
+	// add remaining files (not mods)
+	for fit in file_imports {
 		if !fit.file_path in v.files {
 			v.files << fit.file_path
 		}
@@ -1133,9 +1185,12 @@ Options:
   -prod             Build an optimized executable.
   -o <file>         Place output into <file>.
   -obf              Obfuscate the resulting binary.
-  -show_c_cmd       Print the full C compilation command. 
+  -show_c_cmd       Print the full C compilation command and how much time it took. 
   -debug            Leave a C file for debugging in .program.c. 
+  -live             Enable hot code reloading (required by functions marked with [live]). 
+  fmt               Run vfmt to format the source code. 
   run               Build and execute a V program. You can add arguments after the file name.
+
 
 Files:
   <file>_test.v     Test file.
