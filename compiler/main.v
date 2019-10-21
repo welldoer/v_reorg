@@ -91,9 +91,10 @@ mut:
 	sanitize       bool // use Clang's new "-fsanitize" option
 	is_debug       bool // keep compiled C files
 	no_auto_free   bool // `v -nofree` disable automatic `free()` insertion for better performance in some applications  (e.g. compilers) 
-	c_options      string // Additional options which will be passed to the C compiler.
-                        // For example, passing -c_options=-Os will cause the C compiler to optimize the generated binaries for size.
-                        // You could pass several -c_options=XXX arguments. They will be merged with each other.
+	cflags        string // Additional options which will be passed to the C compiler.
+	                     // For example, passing -cflags -Os will cause the C compiler to optimize the generated binaries for size.
+	                     // You could pass several -cflags XXX arguments. They will be merged with each other.
+	                     // You can also quote several options at the same time: -cflags '-Os -fno-inline-small-functions'.
 }
 
 
@@ -188,7 +189,7 @@ fn (v mut V) compile() {
 #include <inttypes.h>  // int64_t etc 
 
 
-#ifdef __linux__ 
+#if defined(__linux__) || defined(__OpenBSD__) 
 #include <pthread.h> 
 #endif 
 
@@ -199,8 +200,12 @@ fn (v mut V) compile() {
 
 
 #ifdef _WIN32 
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-//#include <WinSock2.h> 
+#include <io.h> // _waccess
+#include <fcntl.h> // _O_U8TEXT
+#include <direct.h> // _wgetcwd
+//#include <WinSock2.h>
 #endif 
 
 //================================== TYPEDEFS ================================*/ 
@@ -359,7 +364,7 @@ string _STR_TMP(const char *fmt, ...) {
 			// It can be skipped in single file programs
 			if v.pref.is_script {
 				//println('Generating main()...')
-				cgen.genln('int main() { init_consts(); $cgen.fn_main; return 0; }')
+				cgen.genln('int main() { \n#ifdef _WIN32\n _setmode(_fileno(stdout), _O_U8TEXT); \n#endif\n init_consts(); $cgen.fn_main; return 0; }')
 			}
 			else {
 				println('panic: function `main` is undeclared in the main module')
@@ -368,7 +373,7 @@ string _STR_TMP(const char *fmt, ...) {
 		}
 		// Generate `main` which calls every single test function
 		else if v.pref.is_test {
-			cgen.genln('int main() { init_consts();')
+			cgen.genln('int main() { \n#ifdef _WIN32\n _setmode(_fileno(stdout), _O_U8TEXT); \n#endif\n init_consts();')
 			for key, f in v.table.fns { 
 				if f.name.starts_with('test_') {
 					cgen.genln('$f.name();')
@@ -409,7 +414,7 @@ void reload_so() {
 		int now = os__file_last_mod_unix(tos2("$file")); 
 		if (now != last) {
 			//v -o bounce -shared bounce.v 
-			os__system(tos2("v -o $file_base -shared $file")); 
+			os__system(tos2("$vexe -o $file_base -shared $file")); 
 			last = now; 
 			load_so("$so_name"); 
 		}
@@ -499,7 +504,7 @@ fn (c &V) cc_windows_cross() {
                obj_name = obj_name.replace('.exe', '')
                obj_name = obj_name.replace('.o.o', '.o')
                mut include := '-I $winroot/include '
-               cmd := 'clang -o $obj_name -w $include -m32 -c -target x86_64-win32 $ModPath/$c.out_name_c'
+               cmd := 'clang -o $obj_name -w $include -DUNICODE -D_UNICODE -m32 -c -target x86_64-win32 $ModPath/$c.out_name_c'
                if c.pref.show_c_cmd {
                        println(cmd)
                }
@@ -536,7 +541,7 @@ fn (v mut V) cc() {
 	} 
 	linux_host := os.user_os() == 'linux'
 	v.log('cc() isprod=$v.pref.is_prod outname=$v.out_name')
-	mut a := [v.pref.c_options, '-w'] // arguments for the C compiler
+	mut a := [v.pref.cflags, '-w'] // arguments for the C compiler
 	flags := v.table.flags.join(' ')
 	//mut shared := ''
 	if v.pref.is_so {
@@ -629,6 +634,9 @@ mut args := ''
 		if v.os == .linux {
 			a << ' -ldl ' 
 		} 
+	}
+	if v.os == .windows {
+		a << '-DUNICODE -D_UNICODE'
 	}
 	// Find clang executable
 	//fast_clang := '/usr/local/Cellar/llvm/8.0.0/bin/clang'
@@ -750,11 +758,16 @@ fn (v mut V) add_user_v_files() {
 		v.log('user_files:')
 		println(user_files)
 	}
+	// To store the import table for user imports
+	mut user_imports := []FileImportTable
 	// Parse user imports
 	for file in user_files {
 		mut p := v.new_parser(file, Pass.imports)
 		p.parse()
+		user_imports << *p.import_table
 	}
+	// To store the import table for lib imports
+	mut lib_imports := []FileImportTable
 	// Parse lib imports
 	if v.pref.build_mode == .default_mode {
 		for i := 0; i < v.table.imports.len; i++ {
@@ -764,6 +777,7 @@ fn (v mut V) add_user_v_files() {
 			for file in vfiles {
 				mut p := v.new_parser(file, Pass.imports)
 				p.parse()
+				lib_imports << *p.import_table
 			}
 		}
 	}
@@ -774,7 +788,7 @@ fn (v mut V) add_user_v_files() {
 			pkg := v.module_path(v.table.imports[i])
 			idir := os.getwd()
 			mut import_path := '$idir/$pkg'
-			if(!os.file_exists(import_path)) {
+			if !os.file_exists(import_path) {
 				import_path = '$v.lang_dir/vlib/$pkg'
 			}
 			vfiles := v.v_files_from_dir(import_path)
@@ -782,6 +796,7 @@ fn (v mut V) add_user_v_files() {
 			for file in vfiles {
 				mut p := v.new_parser(file, Pass.imports)
 				p.parse()
+				lib_imports << *p.import_table
 			}
 		}
 	}
@@ -789,31 +804,42 @@ fn (v mut V) add_user_v_files() {
 		v.log('imports:')
 		println(v.table.imports)
 	}
+	// this order is important for declaration
+	mut combined_imports := []FileImportTable
+	for i := lib_imports.len-1; i>=0; i-- {
+		combined_imports << lib_imports[i]
+	}
+	for i in user_imports {
+		combined_imports << i
+	}
 	// Only now add all combined lib files
-	for _pkg in v.table.imports {
-		pkg := v.module_path(_pkg)
-		idir := os.getwd()
-		mut module_path := '$idir/$pkg'
-		// If we are in default mode, we don't parse vlib .v files, but header .vh files in
-		// TmpPath/vlib
-		// These were generated by vfmt
-		if v.pref.build_mode == .default_mode || v.pref.build_mode == .build {
-			module_path = '$ModPath/vlib/$pkg'
+	// adding the modules each file imports first
+	for fit in combined_imports {
+		for _, mod in fit.imports {
+			mod_p := v.module_path(mod)
+			idir := os.getwd()
+			mut module_path := '$idir/$mod_p'
+			// If we are in default mode, we don't parse vlib .v files, but header .vh files in
+			// TmpPath/vlib
+			// These were generated by vfmt
+			if v.pref.build_mode == .default_mode || v.pref.build_mode == .build {
+				module_path = '$ModPath/vlib/$mod_p'
+			}
+			if !os.file_exists(module_path) {
+				module_path = '$v.lang_dir/vlib/$mod_p'
+			}
+			vfiles := v.v_files_from_dir(module_path)
+			for file in vfiles {
+				if !file in v.files {
+					v.files << file
+				}
+			}
+			// TODO v.files.append_array(vfiles)
 		}
-		if(!os.file_exists(module_path)) {
-			module_path = '$v.lang_dir/vlib/$pkg'
+		if !fit.file_path in v.files {
+			v.files << fit.file_path
 		}
-		vfiles := v.v_files_from_dir(module_path)
-		for vfile in vfiles {
-			v.files << vfile
-		}
-		// TODO v.files.append_array(vfiles)
 	}
-	// Add user code last
-	for file in user_files {
-		v.files << file
-	}
-	// v.files.append_array(user_files)
 }
 
 fn get_arg(joined_args, arg, def string) string {
@@ -951,7 +977,7 @@ fn new_v(args[]string) *V {
 	if os.dir_exists(vroot) && os.dir_exists(vroot + '/vlib/builtin') {
  
 	}  else {
-		println('vlib not found. It should be next to V executable. ') 
+		println('vlib not found. It should be next to the V executable. ')  
 		println('Go to https://vlang.io to install V.') 
 		exit(1) 
 	} 
@@ -969,10 +995,10 @@ fn new_v(args[]string) *V {
 		}
 	}
 
-	mut c_options := ''
+	mut cflags := ''
 	for ci, cv in args {
-		if cv.starts_with('-c_options=') {
-			c_options += cv.replace('-c_options=','') + ' '
+		if cv == '-cflags' {
+			cflags += args[ci+1] + ' '
 		}
 	}
 
@@ -995,7 +1021,7 @@ fn new_v(args[]string) *V {
 		is_run: args.contains('run')
 		is_repl: args.contains('-repl')
 		build_mode: build_mode
-		c_options: c_options
+		cflags: cflags
 	}  
 
 	if pref.is_so {
@@ -1107,7 +1133,9 @@ Options:
   -prod             Build an optimized executable.
   -o <file>         Place output into <file>.
   -obf              Obfuscate the resulting binary.
-  run               Build and execute a V program. You can add arguments after file name.
+  -show_c_cmd       Print the full C compilation command. 
+  -debug            Leave a C file for debugging in .program.c. 
+  run               Build and execute a V program. You can add arguments after the file name.
 
 Files:
   <file>_test.v     Test file.

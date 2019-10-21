@@ -15,7 +15,7 @@ type HANDLE voidptr
 // get_file_handle retrieves the operating-system file handle that is associated with the specified file descriptor.
 pub fn get_file_handle(path string) HANDLE {
     mode := 'rb'
-    _fd := C.fopen(path.cstr(), mode.cstr())
+    _fd := C._wfopen(path.to_wide(), mode.cstr())
     if _fd == 0 {
 	    return HANDLE(INVALID_HANDLE_VALUE)
     }
@@ -27,17 +27,14 @@ pub fn get_file_handle(path string) HANDLE {
 // get_module_filename retrieves the fully qualified path for the file that contains the specified module. 
 // The module must have been loaded by the current process.
 pub fn get_module_filename(handle HANDLE) ?string {
-    mut sz := int(1024) // Optimized length 
-    mut buf := [byte(0); sz] // Not work for GetModuleFileNameW :(
+    mut sz := int(4096) // Optimized length 
+    mut buf := &u16(malloc(4096))
     for {
         status := C.GetModuleFileName(handle, &buf, sz)
         switch status {
         case SUCCESS:
-            _filename := tos(buf.data, sz)
+            _filename := string_from_wide2(buf, sz)
             return _filename
-        case ERROR_INSUFFICIENT_BUFFER:
-            sz += 1024 // increment buffer cluster by 1024
-            buf = [byte(0); sz] // clear buffer
         default:
             // Must handled with GetLastError and converted by FormatMessage
             return error('Cannot get file name from handle.')
@@ -67,7 +64,9 @@ const (
     MAX_ERROR_CODE  = 15841 // ERROR_API_UNAVAILABLE
 )
 
-fn ptr_get_error_message(code u32) voidptr {
+// ptr_win_get_error_msg return string (voidptr) 
+// representation of error, only for windows. 
+fn ptr_win_get_error_msg(code u32) voidptr {
     mut buf := voidptr(0)
     // Check for code overflow
     if code > u32(MAX_ERROR_CODE) {
@@ -81,10 +80,14 @@ fn ptr_get_error_message(code u32) voidptr {
     return buf
 }
 
-pub fn get_error_msg(code u32) string {
-	_ptrdata := ptr_get_error_message(code)
-    if _ptrdata == voidptr(0) {
+// get_error_msg return error code representation in string.
+pub fn get_error_msg(code int) string {
+    if code < 0 { // skip negative
         return ''
     }
-	return tos(_ptrdata, C.strlen(_ptrdata))
+    _ptr_text := ptr_win_get_error_msg(u32(code))
+    if _ptr_text == 0 { // compare with null
+        return ''
+    }
+    return tos(_ptr_text, C.strlen(_ptr_text))
 }
