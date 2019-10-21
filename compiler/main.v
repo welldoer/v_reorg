@@ -116,6 +116,10 @@ fn main() {
 		println('Translating C to V will be available in V 0.3') 
 		return 
 	} 
+	if 'up' in args {
+		update_v() 
+		return 
+	} 
 	// TODO quit if the compiler is too old 
 	// u := os.file_last_mod_unix('v')
 	// If there's no tmp path with current version yet, the user must be using a pre-built package
@@ -189,6 +193,7 @@ fn (v mut V) compile() {
 #include <signal.h>
 #include <stdarg.h> // for va_list 
 #include <inttypes.h>  // int64_t etc 
+#include <string.h> // memcpy 
 
 #define STRUCT_DEFAULT_VALUE {}
 #define EMPTY_STRUCT_DECLARATION
@@ -361,7 +366,7 @@ void init_consts();')
 	// if v.build_mode in [.default, .embed_vlib] {
 	if v.pref.build_mode == .default_mode || v.pref.build_mode == .embed_vlib {
 		// vlib can't have `init_consts()`
-		cgen.genln('void init_consts() { g_str_buf=malloc(1000); ${cgen.consts_init.join_lines()} }')
+		cgen.genln('void init_consts() { \n#ifdef _WIN32\n _setmode(_fileno(stdout), _O_U8TEXT); \n#endif\n g_str_buf=malloc(1000); ${cgen.consts_init.join_lines()} }')
 		// _STR function can't be defined in vlib
 		cgen.genln('
 string _STR(const char *fmt, ...) {
@@ -404,7 +409,7 @@ string _STR_TMP(const char *fmt, ...) {
 			// It can be skipped in single file programs
 			if v.pref.is_script {
 				//println('Generating main()...')
-				cgen.genln('int main() { \n#ifdef _WIN32\n _setmode(_fileno(stdout), _O_U8TEXT); \n#endif\n init_consts(); $cgen.fn_main; return 0; }')
+				cgen.genln('int main() { init_consts(); $cgen.fn_main; return 0; }')
 			}
 			else {
 				println('panic: function `main` is undeclared in the main module')
@@ -413,7 +418,7 @@ string _STR_TMP(const char *fmt, ...) {
 		}
 		// Generate `main` which calls every single test function
 		else if v.pref.is_test {
-			cgen.genln('int main() { \n#ifdef _WIN32\n _setmode(_fileno(stdout), _O_U8TEXT); \n#endif\n init_consts();')
+			cgen.genln('int main() { init_consts();')
 			for key, f in v.table.fns { 
 				if f.name.starts_with('test_') {
 					cgen.genln('$f.name();')
@@ -752,6 +757,9 @@ mut args := ''
 	// Output executable name
 	// else {
 	a << '-o $v.out_name'
+	if os.dir_exists(v.out_name) {
+		panic('\'$v.out_name\' is a directory')
+	}
 	// The C file we are compiling
 	//a << '"$TmpPath/$v.out_name_c"'
 	a << '".$v.out_name_c"'
@@ -809,8 +817,14 @@ mut args := ''
 	if res.contains('error: ') {
 		if v.pref.is_debug { 
 			println(res)
+		} else {
+			print(res.limit(200)) 
+			if res.len > 200 { 
+				println('...\n(Use `v -debug` to print the entire error message)\n')   
+			} 
 		} 
-		panic('C error. This should never happen. Please create a GitHub issue.')
+		panic('C error. This should never happen. ' +
+			'Please create a GitHub issue: https://github.com/vlang/v/issues/new/choose')
 	}
 	// Link it if we are cross compiling and need an executable
 	if v.os == .linux && !linux_host && v.pref.build_mode != .build {
@@ -946,7 +960,7 @@ fn (v mut V) add_user_v_files() {
 			idir := os.getwd()
 			mut import_path := '$idir/$mod_path'
 			//if !os.file_exists(import_path) || !os.is_dir(import_path){
-			if !os.is_dir(import_path){
+			if !os.dir_exists(import_path){
 				import_path = '$v.lang_dir/vlib/$mod_path'
 			}
 			vfiles := v.v_files_from_dir(import_path)
@@ -984,7 +998,7 @@ fn (v mut V) add_user_v_files() {
 		if v.pref.build_mode == .default_mode || v.pref.build_mode == .build {
 			module_path = '$ModPath/vlib/$mod_p'
 		}
-		if !os.is_dir(module_path) {
+		if !os.dir_exists(module_path) {
 			module_path = '$v.lang_dir/vlib/$mod_p'
 		}
 		vfiles := v.v_files_from_dir(module_path)
@@ -1245,7 +1259,7 @@ fn run_repl() []string {
 				}
 			}
 			else {
-				for i:=0; i<vals.len-1; i++ {
+				for i:=0; i < vals.len; i++ {
 					println(vals[i])
 				}
 			}
@@ -1263,7 +1277,7 @@ fn run_repl() []string {
 			if s.contains('panic: ') {
 				if !s.contains('declared and not used') 	{
 					mut vals := s.split('\n')
-					for i:=1; i<vals.len; i++ {
+					for i:=0; i < vals.len; i++ {
 						println(vals[i])
 					} 
 				}
@@ -1299,6 +1313,7 @@ Options:
   -debug            Leave a C file for debugging in .program.c. 
   -live             Enable hot code reloading (required by functions marked with [live]). 
   fmt               Run vfmt to format the source code. 
+  up                Update V. 
   run               Build and execute a V program. You can add arguments after the file name.
 
 
@@ -1330,3 +1345,18 @@ fn env_vflags_and_os_args() []string {
    }
    return args
 }
+
+fn update_v() {
+	println('Updating V...') 
+	vroot := os.dir(os.executable()) 
+	mut s := os.exec('git -C "$vroot" pull --rebase origin master') 
+	println(s) 
+	$if windows { 
+		os.mv('$vroot/v.exe', '$vroot/v_old.exe') 
+		s = os.exec('$vroot/make.bat') 
+		println(s) 
+	} $else { 
+		s = os.exec('make -C "$vroot"') 
+		println(s) 
+	} 
+} 

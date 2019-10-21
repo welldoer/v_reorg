@@ -2309,19 +2309,17 @@ fn format_str(str string) string {
 }
 
 fn (p mut Parser) string_expr() {
-	// println('.str EXPR')
 	str := p.lit
 	// No ${}, just return a simple string
 	if p.peek() != .dollar {
 		p.fgen('\'$str\'')
-		// println('before format: "$str"')
 		f := format_str(str)
-		// println('after format: "$str"')
+		// `C.puts('hi')` => `puts("hi");` 
 		if p.calling_c || (p.pref.translated && p.mod == 'main') {
 			p.gen('"$f"')
 		}
 		else {
-			p.gen('tos2("$f")') 
+			p.gen('tos2((byte*)"$f")') 
 		}
 		p.next()
 		return
@@ -2387,20 +2385,22 @@ fn (p mut Parser) string_expr() {
 		}
 	}
 	if complex_inter {
-	p.fgen('}') 
-} 
+		p.fgen('}') 
+	} 
 	p.fgen('\'') 
 	// println("hello %d", num) optimization.
 	if p.cgen.nogen {
 		return
 	}
 	// println: don't allocate a new string, just print	it. 
-	cur_line := p.cgen.cur_line.trim_space()
-	if cur_line.contains('println (') && p.tok != .plus && 
-		!cur_line.contains('string_add') && !cur_line.contains('eprintln') {
-		p.cgen.resetln(cur_line.replace('println (', 'printf('))
-		p.gen('$format\\n$args')
-		return
+	$if !windows {
+		cur_line := p.cgen.cur_line.trim_space()
+		if cur_line.contains('println (') && p.tok != .plus &&
+			!cur_line.contains('string_add') && !cur_line.contains('eprintln') {
+			p.cgen.resetln(cur_line.replace('println (', 'printf('))
+			p.gen('$format\\n$args')
+			return
+		}
 	}
 	// '$age'! means the user wants this to be a tmp string (uses global buffer, no allocation,
 	// won't be used	again)
@@ -3273,14 +3273,18 @@ fn (p mut Parser) attribute() {
 
 fn (p mut Parser) defer_st() {
 	p.check(.key_defer)
-	// Wrap everything inside the defer block in /**/ comments, and save it in 
-	// `defer_text`. It will be inserted before every `return`. 
-	p.genln('/*') 
-	pos := p.cgen.lines.len 
 	p.check(.lcbr) 
+
+	pos := p.cgen.lines.len 
+
+	// Save everything inside the defer block to `defer_text`.
+	// It will be inserted before every `return`
 	p.genln('{') 
 	p.statements() 
 	p.cur_fn.defer_text = p.cgen.lines.right(pos).join('\n') + p.cur_fn.defer_text 
-	p.genln('*/') 
+
+	// Rollback p.cgen.lines
+	p.cgen.lines = p.cgen.lines.left(pos)
+	p.cgen.resetln('')
 }  
 
