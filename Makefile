@@ -11,7 +11,7 @@ v-release: v.c
 	./v -prod -o v compiler
 
 v.c:
-	curl -Os https://raw.githubusercontent.com/vlang/vc/master/v.c
+	# curl -Os https://raw.githubusercontent.com/vlang/vc/master/v.c
 	${CC} -std=gnu11 -w -o v v.c -lm 
 
 test: v
