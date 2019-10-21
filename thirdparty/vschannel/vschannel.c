@@ -11,7 +11,6 @@ DWORD   protocol        = 0;
 ALG_ID  aid_key_exch    = 0;
 
 
-struct TlsContext tls_ctx;
 // TODO: joe-c
 // socket / tls ctx
 struct TlsContext {
@@ -31,6 +30,8 @@ struct TlsContext {
 	BOOL                   context_initialized;
 	PCCERT_CONTEXT         p_pemote_cert_context;
 };
+
+struct TlsContext tls_ctx;
 
 struct TlsContext new_tls_context() {
 	return (struct TlsContext) {
@@ -133,7 +134,7 @@ void vschannel_init() {
 	tls_ctx.creds_initialized = TRUE;
 }
 
-INT request(CHAR *host, CHAR *req, CHAR *out)
+INT request(INT iport, CHAR *host, CHAR *req, CHAR **out)
 {
 	SecBuffer  ExtraData;
 	SECURITY_STATUS Status;
@@ -145,6 +146,8 @@ INT request(CHAR *host, CHAR *req, CHAR *out)
 	INT resp_length = 0;
 
 	protocol = SP_PROT_TLS1_2_CLIENT;
+
+	port_number = iport;
 
 	// Connect to server.
 	if(connect_to_server(host, port_number)) {
@@ -197,7 +200,6 @@ INT request(CHAR *host, CHAR *req, CHAR *out)
 		vschannel_cleanup();
 		return resp_length;
 	}
-	
 	
 	// Send a close_notify alert to the server and
 	// close down the connection.
@@ -771,7 +773,7 @@ static SECURITY_STATUS client_handshake_loop(BOOL fDoInitialRead, SecBuffer *pEx
 }
 
 
-static SECURITY_STATUS https_make_request(CHAR *req, CHAR *out, int *length) {
+static SECURITY_STATUS https_make_request(CHAR *req, CHAR **out, int *length) {
 	SecPkgContext_StreamSizes Sizes;
 	SECURITY_STATUS scRet;
 	SecBufferDesc   Message;
@@ -857,6 +859,7 @@ static SECURITY_STATUS https_make_request(CHAR *req, CHAR *out, int *length) {
 	}
 
 	// Read data from server until done.
+	INT buff_size = vsc_init_resp_buff_size;
 	cbIoBuffer = 0;
 	while(TRUE){
 		// Read some data.
@@ -933,10 +936,20 @@ static SECURITY_STATUS https_make_request(CHAR *req, CHAR *out, int *length) {
 			}
 		}
 
+		// increase buffer size if we need
+		int required_length = *length+(int)pDataBuffer->cbBuffer;
+		if( required_length > buff_size ) {
+			CHAR *a = realloc(*out, required_length);
+			if( a == NULL ) {
+				scRet = SEC_E_INTERNAL_ERROR;
+				return scRet;
+			}
+			*out = a;
+			buff_size = required_length;
+		}
 		// Copy the decrypted data to our output buffer
+		memcpy(*out+*length, pDataBuffer->pvBuffer, (int)pDataBuffer->cbBuffer);
 		*length += (int)pDataBuffer->cbBuffer;
-		memcpy(out, pDataBuffer->pvBuffer, (int)pDataBuffer->cbBuffer);
-		out += (int)pDataBuffer->cbBuffer;
 		
 		// Move any "extra" data to the input buffer.
 		if(pExtraBuffer) {

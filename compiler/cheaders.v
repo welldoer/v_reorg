@@ -11,9 +11,27 @@ CommonCHeaders = '
 #include <inttypes.h>  // int64_t etc
 #include <string.h> // memcpy
 
-#define STRUCT_DEFAULT_VALUE {}
+#ifndef _WIN32
+#include <ctype.h>
+#include <locale.h> // tolower
+#endif
+
+#ifdef __APPLE__
+#include <libproc.h> // proc_pidpath
+#include <execinfo.h> // backtrace and backtrace_symbols_fd
+#endif
+
+#ifdef __linux__
+#include <execinfo.h> // backtrace and backtrace_symbols_fd
+#endif
+
+#ifdef __linux__
+#include <sys/types.h>
+#include <sys/wait.h> // os__wait uses wait on nix
+#endif
+
+
 #define EMPTY_STRUCT_DECLARATION
-#define EMPTY_STRUCT_INIT
 #define OPTION_CAST(x) (x)
 
 #ifdef _WIN32
@@ -31,13 +49,9 @@ CommonCHeaders = '
 // On MSVC these are the same (as long as /volatile:ms is passed)
 #define _Atomic volatile
 
-// MSVC can\'t parse some things properly
-#undef STRUCT_DEFAULT_VALUE
-#define STRUCT_DEFAULT_VALUE {0}
+// MSVC cannot parse some things properly
 #undef EMPTY_STRUCT_DECLARATION
 #define EMPTY_STRUCT_DECLARATION void *____dummy_variable;
-#undef EMPTY_STRUCT_INIT
-#define EMPTY_STRUCT_INIT 0
 #undef OPTION_CAST
 #define OPTION_CAST(x)
 #endif
@@ -94,7 +108,7 @@ typedef map map_string;
 #define _PUSH_MANY(arr, val, tmp, tmp_typ) {tmp_typ tmp = (val); array__push_many(arr, tmp.data, tmp.len);}
 #define _IN(typ, val, arr) array_##typ##_contains(arr, val)
 #define _IN_MAP(val, m) map__exists(m, val)
-#define ALLOC_INIT(type, ...) (type *)memdup((type[]){ __VA_ARGS__ }, sizeof(type))
+//#define ALLOC_INIT(type, ...) (type *)memdup((type[]){ __VA_ARGS__ }, sizeof(type))
 
 //================================== GLOBALS =================================*/
 //int V_ZERO = 0;

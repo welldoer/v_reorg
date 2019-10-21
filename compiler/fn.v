@@ -124,7 +124,7 @@ fn (p mut Parser) fn_decl() {
 		p.next()
 	}
 	p.returns = false
-		p.gen('/* returns $p.returns */')
+	//p.gen('/* returns $p.returns */')
 	p.next()
 	mut f := new_fn(p.mod, is_pub)
 	// Method receiver
@@ -140,7 +140,7 @@ fn (p mut Parser) fn_decl() {
 		}
 		receiver_typ = p.get_type()
 		T := p.table.find_type(receiver_typ)
-		if T.is_interface {
+		if T.cat == .interface_ {
 			p.error('invalid receiver type `$receiver_typ` (`$receiver_typ` is an interface)')
 		}
 		// Don't allow modifying types from a different module
@@ -779,7 +779,7 @@ fn (p mut Parser) fn_call_args(f mut Fn) *Fn {
 		file_path := p.file_path.replace('\\', '\\\\') // escape \
 		p.cgen.resetln(p.cgen.cur_line.replace(
 			'v_panic (',
-			'_panic_debug ($p.scanner.line_nr, tos2("$file_path"), tos2("$mod_name"), tos2("$fn_name"), '
+			'_panic_debug ($p.scanner.line_nr, tos2((byte *)"$file_path"), tos2((byte *)"$mod_name"), tos2((byte *)"$fn_name"), '
 		))
 	}
 	// Receiver - first arg
@@ -898,7 +898,7 @@ fn (p mut Parser) fn_call_args(f mut Fn) *Fn {
 				// have to use `(array[]){ expr }` hack.
 				if expected.starts_with('array_') && expected.ends_with('*') {
 					p.cgen.set_placeholder(ph, '& /*111*/ (array[]){')
-					p.gen('} ')
+					p.gen('}[0] ')
 				}
 				// println('\ne:"$expected" got:"$got"')
 				else if ! (expected == 'void*' && got == 'int') &&
