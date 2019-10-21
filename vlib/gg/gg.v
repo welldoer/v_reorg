@@ -48,10 +48,12 @@ pub:
 	retina    bool
 	 
 	font_size int
+	font_path string
 	create_window bool 
 	window_user_ptr voidptr 
 	window_title string 
 	always_on_top bool 
+	scale int 
 }
 
 struct GG {
@@ -272,7 +274,7 @@ pub fn (ctx &GG) draw_rect2(x, y, w, h f32, c gx.Color) {
 fn todo_remove_me(cfg Cfg, scale int) { 
 	// Can only have text in ortho mode
 	if !cfg.use_ortho {
-		return &GG{} 
+		return
 	}
 	mut width := cfg.width * scale
 	mut height := cfg.height * scale

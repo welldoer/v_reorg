@@ -126,29 +126,27 @@ fn main() {
 		return 
 	} 
 	if 'install' in args {
-		mod := args.last() 
-		if args.len != 3 || mod.len < 2 {
-			println('usage: v install [module]')	 
+		if args.len <= 3 {
+			println('usage: v install [module] [module] [...]')
 			return 
-		} 
+		}
+
+		names := args.slice(2, args.len)
 		vroot := os.dir(os.executable()) 
 		vget := '$vroot/tools/vget' 
-		if !os.file_exists(vget) {
-			println('Building vget...') 
+		if true {
+			//println('Building vget...') 
 			os.chdir(vroot + '/tools') 
 			vexec := os.args[0] 
 			_ := os.exec('$vexec vget.v') or {
 				panic(err)
-				return // TODO remove return
 			}
-			println('Done.') 
-		} 
-		println('Installing module ${mod}...') 
-		_ := os.exec('$vget $mod') or {
-			panic(err)
-			return // TODO remove return
 		}
-		return 
+
+		_ := os.exec('$vget ' + names.join(' ')) or {
+				panic(err)
+		}
+		return
 	} 
 	// TODO quit if the compiler is too old 
 	// u := os.file_last_mod_unix('v')
@@ -197,13 +195,9 @@ fn main() {
 	}
   
 	if 'run' in args {
-		vsource := v.dir
-		vtarget := final_target_out_name( v.out_name )
-		if os.file_exists(vtarget) && ( os.file_last_mod_unix(vsource) <= os.file_last_mod_unix(vtarget) ) {
-			//println('ALREADY BUILD FROM vsource: $vsource | vtarget: $vtarget')
-			v.run_compiled_executable_and_exit()
-		}
-		v.compile()
+		// always recompile for now, too error prone to skip recompilation otherwise
+		// for example for -repl usage, especially when piping lines to v
+		v.compile() 
 		v.run_compiled_executable_and_exit()
 	}
   
@@ -469,7 +463,9 @@ string _STR_TMP(const char *fmt, ...) {
 			// It can be skipped in single file programs
 			if v.pref.is_script {
 				//println('Generating main()...')
-				cgen.genln('int main() { init_consts(); $cgen.fn_main; return 0; }')
+				cgen.genln('int main() { init_consts();')
+				cgen.genln('$cgen.fn_main;')
+				cgen.genln('return 0; }')
 			}
 			else {
 				println('panic: function `main` is undeclared in the main module')
@@ -646,6 +642,7 @@ fn final_target_out_name(out_name string) string {
 	$if windows {
 		cmd = out_name
 		cmd = cmd.replace('/', '\\')
+		cmd += '.exe'
 	}
 	return cmd
 }
@@ -654,7 +651,7 @@ fn (v V) run_compiled_executable_and_exit() {
 	if v.pref.is_verbose {
 		println('============ running $v.out_name ============') 
 	}	  
-	mut cmd := final_target_out_name(v.out_name)
+	mut cmd := final_target_out_name(v.out_name).replace('.exe','')
 	if os.args.len > 3 {
 		cmd += ' ' + os.args.right(3).join(' ')
 	}
@@ -892,7 +889,6 @@ mut args := ''
 		}
 		panic('C error. This should never happen. ' +
 			'Please create a GitHub issue: https://github.com/vlang/v/issues/new/choose')
-		return // TODO remove return
 	}
 	diff := time.ticks() - ticks 
 	// Print the C command
@@ -915,7 +911,6 @@ mut args := ''
 		' /usr/lib/x86_64-linux-gnu/libc.so ' +
 		'/usr/lib/x86_64-linux-gnu/crtn.o') or {
 			panic(err)
-			return // TODO remove return
 		}
 		println(ress)
 		println('linux cross compilation done. resulting binary: "$v.out_name"')
@@ -1227,7 +1222,7 @@ fn new_v(args[]string) *V {
  
 	}  else {
 		println('vlib not found. It should be next to the V executable. ')  
-		println('Go to https://vlang.io to install V.') 
+		println('Go to https://vlang.io to install V.')
 		exit(1) 
 	} 
 	mut out_name_c := out_name.all_after('/') + '.c'
@@ -1295,8 +1290,6 @@ fn new_v(args[]string) *V {
 }
 
 fn run_repl() []string {
-	println('REPL is temporarily disabled, sorry') 
-	exit(1) 
 	println('V $Version')
 	println('Use Ctrl-C or `exit` to exit')
 	file := '.vrepl.v'
@@ -1304,6 +1297,8 @@ fn run_repl() []string {
 	defer {
 		os.rm(file) 
 		os.rm(temp_file) 
+		os.rm(file.left(file.len - 2))
+		os.rm(temp_file.left(temp_file.len - 2))
 	} 
 	mut lines := []string
 	vexe := os.args[0] 
@@ -1314,8 +1309,11 @@ fn run_repl() []string {
 			continue
 		}
 		line = line.trim_space()
-		if line == '' || line == 'exit' {
+		if line.len == -1 || line == '' || line == 'exit' {
 			break
+		}
+		if line == '\n' {
+			continue
 		}
 		// Save the source only if the user is printing something,
 		// but don't add this print call to the `lines` array,
@@ -1325,7 +1323,6 @@ fn run_repl() []string {
 			os.write_file(file, source_code)
 			s := os.exec('$vexe run $file -repl') or {
 				panic(err)
-				break // TODO remove break
 			}
 			vals := s.split('\n')
 			for i:=0; i < vals.len; i++ {
@@ -1343,7 +1340,6 @@ fn run_repl() []string {
 			os.write_file(temp_file, temp_source_code)
 			s := os.exec('$vexe run $temp_file -repl') or {
 				panic(err)
-				break // TODO remove break
 			}
 			lines << line
 			vals := s.split('\n')
@@ -1409,20 +1405,17 @@ fn update_v() {
 	vroot := os.dir(os.executable()) 
 	s := os.exec('git -C "$vroot" pull --rebase origin master') or {
 		panic(err)
-		return // TODO remove return
 	}
 	println(s) 
 	$if windows { 
 		os.mv('$vroot/v.exe', '$vroot/v_old.exe') 
 		s2 := os.exec('$vroot/make.bat') or {
 			panic(err)
-			return // TODO remove return
 		}
 		println(s2) 
 	} $else { 
 		s2 := os.exec('make -C "$vroot"') or {
 			panic(err)
-			return // TODO remove return
 		}
 		println(s2) 
 	} 

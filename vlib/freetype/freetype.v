@@ -13,7 +13,8 @@ import (
 	gl
 ) 
 
-#flag darwin -I/usr/local/Cellar/freetype/2.10.0/include/freetype2 
+#flag darwin -I/usr/local/include/freetype2
+#flag darwin -I/opt/local/include/freetype2
 #flag -lfreetype 
 
 //#flag -I @VROOT/thirdparty/freetype 
@@ -62,18 +63,20 @@ struct Context {
 	scale     int // retina = 2 , normal = 1
 }
 
+/* 
 struct Cfg {
 	width     int
 	height    int
 	use_ortho bool 
 	retina    bool
-	 
+	scale int 
 	font_size int
 	create_window bool 
 	window_user_ptr voidptr 
 	window_title string 
 	always_on_top bool 
 }
+*/ 
 
 
 // jfn ft_load_char(face FT_Face, code FT_ULong) Character {
@@ -81,7 +84,8 @@ struct Cfg {
 fn ft_load_char(_face Face, code i64) Character {
 	// #FT_Face face = *(FT_Face*)(_face); FT_ULong code = *(FT_ULong*)(code);
 	# FT_Face face = *((FT_Face*)_face.cobj);
-	# if (FT_Load_Char(face, code, FT_LOAD_RENDER))
+	# int condition = FT_Load_Char(face, code, FT_LOAD_RENDER);
+	if (C.condition != 0)
 	{
 		println('freetype: Failed to load Glyph')
 		exit(1)
@@ -115,7 +119,8 @@ fn ft_load_char(_face Face, code i64) Character {
 	return ch
 }
 
-pub fn new_context(cfg gg.Cfg, scale int) *Context {
+pub fn new_context(cfg gg.Cfg) *Context {
+	scale := cfg.scale 
 	// Can only have text in ortho mode
 	if !cfg.use_ortho {
 		return &Context{} 
@@ -151,19 +156,23 @@ pub fn new_context(cfg gg.Cfg, scale int) *Context {
 	println('ERROR::FREETYPE: Could not init FreeType Library')
 	// Load font as face
 	// face := FT_Face{}
-	mut font_path := 'RobotoMono-Regular.ttf'
+	mut font_path := cfg.font_path
+	if font_path == '' {
+		font_path = 'RobotoMono-Regular.ttf'
+	}
 	if !os.file_exists(font_path) {
 		exe_path := os.executable()
 		exe_dir := os.basedir(exe_path)
-		println('Trying to load from $exe_dir')
-		font_path = '$exe_dir/RobotoMono-Regular.ttf'
+		font_path = '$exe_dir/$font_path'
 	}
 	if !os.file_exists(font_path) {
-		println('failed to load RobotoMono-Regular.ttf')
+		println('failed to load $font_path')
 		return 0
 	}
+	println('Trying to load font from $font_path')
 	# FT_Face face;
-	# if (FT_New_Face(ft, font_path.str, 0, &face))
+	# int condition = FT_New_Face(ft, font_path.str, 0, &face);
+	if (C.condition != 0)
 	// # if (FT_New_Face(ft, "/Library/Fonts/Courier New.ttf", 0, &face))
 	// # if (FT_New_Face(ft, "/System/Library/Fonts/Apple Color Emoji.ttc", 0, &face))
 	{
