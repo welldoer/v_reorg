@@ -7,7 +7,7 @@ Refer the project [vlang](https://github.com/vlang/v)
 =========================================================================
 
 
-# The V Programming Language 0.1.x
+# The V Programming Language
 
 [![Build Status](https://travis-ci.org/vlang/v.svg?branch=master)](https://travis-ci.org/vlang/v)
 <a href='https://patreon.com/vlang'><img src='https://img.shields.io/endpoint.svg?url=https%3A%2F%2Fshieldsio-patreon.herokuapp.com%2Fvlang%2Fpledges&style=for-the-badge' height='20'></a>
@@ -15,6 +15,8 @@ Refer the project [vlang](https://github.com/vlang/v)
 https://vlang.io
 
 Documentation: https://vlang.io/docs
+
+Changelog: [Master Changelog](https://github.com/vlang/v/blob/master/CHANGELOG.md) | [Releases (with changelogs)](https://github.com/vlang/v/releases)
 
 Twitter: https://twitter.com/v_language
 
@@ -76,7 +78,7 @@ Otherwise follow these instructions:
 You can create a `/usr/local/bin/v` symlink so that V is globally available:
 
 ```
-sudo v symlink
+sudo ./v symlink
 ```
 
 
@@ -123,12 +125,7 @@ v run tetris/tetris.v
 
 <img src='https://raw.githubusercontent.com/vlang/v/master/examples/tetris/screenshot.png' width=300>
 
-
-In order to build Tetris and anything else using the graphics module, you will need to install glfw and freetype.
-
-```
-v install glfw
-```
+In order to build Tetris and anything else using the graphics module, you will need to install glfw and freetype libraries.
 
 If you plan to use the http package, you also need to install OpenSSL on non-Windows systems.
 
@@ -144,9 +141,59 @@ sudo pacman -S glfw-x11 freetype2
 
 Fedora:
 sudo dnf install glfw glfw-devel freetype-devel
+
+Windows:
+git clone --depth=1 https://github.com/ubawurinna/freetype-windows-binaries [path to v repo]/thirdparty/freetype/
+
 ```
 
 glfw dependency will be removed soon.
+
+## JavaScript backend
+
+```
+fn main() {
+        for i := 0; i < 3; i++ {
+                println('Hello from V.js')
+        }
+}
+```
+
+```bash
+v -o hi.js hi.v && node hi.js
+Hello from V.js
+Hello from V.js
+Hello from V.js
+```
+
+## Troubleshooting:
+
+You can see how V invokes the C backend compiler with `v -show_c_cmd file.v` .
+
+You can produce a .c file, *without* compiling it further with `v -o file.c file.v` . 
+That is useful, if you want to integrate v as a transpiler into the build system (probably using a Makefile) of an existing large C code base, or if you just want to read the produced C code.
+
+You can prevent v from deleting the intermediate .c file (which is useful if you want to use a debugger like gdb or msvc) by: `v -debug file.v` .
+
+You can pass `-g`, which has the effect of -debug, and in addition will make the debugger information to have V line numbers, instead of C ones (NB: this will make the intermediate .c file harder to read).
+
+
+You can also set the VFLAGS environment variable to pass one or more flags to v, so that you do not have to type them manually everytime.
+Windows (cmd): `set VFLAGS=-debug -show_c_cmd`
+Windows (PowerShell): `$env:VFLAGS="-debug -show_c_cmd"`
+Unix (bash): export VFLAGS="-debug -show_c_cmd"
+
+Windows:
+If you get this error while running the V REPL, and you are using msvc:
+`'gcc' is not recognized as an internal or external command, operable program or batch file.`
+
+... please try:
+```shell
+set VFLAGS=-os msvc
+v.exe runrepl
+
+```
+
 
 ## Contributing
 

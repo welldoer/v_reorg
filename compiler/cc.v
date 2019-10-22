@@ -12,9 +12,31 @@ import (
 fn (v mut V) cc() {
 	// build any thirdparty obj files
 	v.build_thirdparty_obj_files()
-
-	// Just create a c file and exit
-	if v.out_name.ends_with('.c') {
+	// Just create a C/JavaScript file and exit
+	if v.out_name.ends_with('.c') || v.out_name.ends_with('.js') {
+		// Translating V code to JS by launching vjs
+		$if !js {
+			if v.out_name.ends_with('.js') {
+				vexe := os.executable()
+				vjs_path := vexe + 'js'
+				dir := os.dir(vexe)
+				if !os.file_exists(vjs_path) {
+					println('V.js compiler not found, building...')
+					ret := os.system('$vexe -o $vjs_path -os js $dir/compiler')
+					if ret == 0 {
+						println('Done.')
+					} else {
+						println('Failed.')
+						exit(1)
+					}	
+				}	
+				ret := os.system('$vjs_path -o $v.out_name $v.dir')
+				if ret == 0 {
+					println('Done. Run it with `node $v.out_name`')
+					println('JS backend is at a very early stage.')
+				}	
+			}
+		}
 		os.mv(v.out_name_c, v.out_name)
 		exit(0)
 	}
@@ -40,7 +62,11 @@ fn (v mut V) cc() {
 		a << '-shared -fPIC '// -Wl,-z,defs'
 		v.out_name = v.out_name + '.so'
 	}
-	if v.pref.build_mode == .build {
+	if v.pref.build_mode == .build_module {
+		// Create the modules directory if it's not there.
+		if !os.file_exists(ModPath)  {
+			os.mkdir(ModPath)
+		}
 		v.out_name = ModPath + v.dir + '.o' //v.out_name
 		println('Building ${v.out_name}...')
 	}
@@ -64,7 +90,7 @@ fn (v mut V) cc() {
 	}
 
 	mut libs := ''// builtin.o os.o http.o etc
-	if v.pref.build_mode == .build {
+	if v.pref.build_mode == .build_module {
 		a << '-c'
 	}
 	else if v.pref.build_mode == .embed_vlib {
@@ -119,20 +145,22 @@ fn (v mut V) cc() {
 		a << '-mmacosx-version-min=10.7'
 	}
 	cflags := v.get_os_cflags()
-	// add all flags (-I -l -L etc) not .o files
-	for flag in cflags {
-		if flag.value.ends_with('.o') { continue }
-		a << flag.format()
-	}
+
 	// add .o files
 	for flag in cflags {
 		if !flag.value.ends_with('.o') { continue }
 		a << flag.format()
 	}
+	// add all flags (-I -l -L etc) not .o files
+	for flag in cflags {
+		if flag.value.ends_with('.o') { continue }
+		a << flag.format()
+	}
+	
 	a << libs
 	// Without these libs compilation will fail on Linux
 	// || os.user_os() == 'linux'
-	if v.pref.build_mode != .build && (v.os == .linux || v.os == .freebsd || v.os == .openbsd ||
+	if v.pref.build_mode != .build_module && (v.os == .linux || v.os == .freebsd || v.os == .openbsd ||
 		v.os == .netbsd || v.os == .dragonfly) {
 		a << '-lm -lpthread '
 		// -ldl is a Linux only thing. BSDs have it in libc.
@@ -140,9 +168,11 @@ fn (v mut V) cc() {
 			a << ' -ldl '
 		}
 	}
-	if v.os == .windows {
-		a << '-DUNICODE -D_UNICODE'
+
+	if v.os == .js && os.user_os() == 'linux' {
+		a << '-lm'
 	}
+	
 	args := a.join(' ')
 	cmd := '${v.pref.ccompiler} $args'
 	// Run
@@ -259,7 +289,7 @@ fn (c mut V) cc_windows_cross() {
 	obj_name = obj_name.replace('.exe', '')
 	obj_name = obj_name.replace('.o.o', '.o')
 	include := '-I $winroot/include '
-	cmd := 'clang -o $obj_name -w $include -DUNICODE -D_UNICODE -m32 -c -target x86_64-win32 $ModPath/$c.out_name_c'
+	cmd := 'clang -o $obj_name -w $include -m32 -c -target x86_64-win32 $ModPath/$c.out_name_c'
 	if c.pref.show_c_cmd {
 			println(cmd)
 	}
@@ -267,7 +297,7 @@ fn (c mut V) cc_windows_cross() {
 		println('Cross compilation for Windows failed. Make sure you have clang installed.')
 		exit(1)
 	}
-	if c.pref.build_mode != .build {
+	if c.pref.build_mode != .build_module {
 		link_cmd := 'lld-link $obj_name $winroot/lib/libcmt.lib ' +
 		'$winroot/lib/libucrt.lib $winroot/lib/kernel32.lib $winroot/lib/libvcruntime.lib ' +
 		'$winroot/lib/uuid.lib'
@@ -314,6 +344,17 @@ fn find_c_compiler_default() string {
 }
 
 fn find_c_compiler_thirdparty_options() string {
-	$if windows { return '' }
-	return '-fPIC'
+	if '-m32' in os.args{
+		$if windows {
+			return '-m32'
+		}$else{
+			return '-fPIC -m32'
+		}
+	}else{
+		$if windows {
+			return ''
+		}$else{
+			return '-fPIC'
+		}
+	}
 }
