@@ -7,12 +7,6 @@ module builtin
 #include <float.h>
 #include <math.h>
 
-pub fn (d double) str() string {
-	buf := malloc(sizeof(double) * 5 + 1)// TODO
-	C.sprintf(buf, '%f', d)
-	return tos(buf, strlen(buf))
-}
-
 pub fn (d f64) str() string {
 	buf := malloc(sizeof(double) * 5 + 1)// TODO
 	C.sprintf(buf, '%f', d)
@@ -86,23 +80,25 @@ pub fn (nn u32) str() string {
 	return tos(buf + max - len, len)
 }
 
-pub fn (nn u8) str() string {
+/*
+pub fn (nn byte) str() string {
 	 mut n := nn
-	if n == u8(0) {
+	if n == byte(0) {
 		return '0'
 	}
 	max := 5
 	mut buf := malloc(max)
 	mut len := 0
 	// Fill the string from the end
-	for n > u8(0) {
-		d := n % u8(10)
-		buf[max - len - 1] = d + u8(`0`)
+	for n > byte(0) {
+		d := n % byte(10)
+		buf[max - len - 1] = d + byte(`0`)
 		len++
-		n = n / u8(10)
+		n = n / byte(10)
 	}
 	return tos(buf + max - len, len)
 }
+*/
 
 pub fn (nn i64) str() string {
 	mut n := nn

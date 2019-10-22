@@ -34,29 +34,13 @@ struct C.FILE {
 }
 
 struct File {
-	cfile *FILE
+	cfile &FILE
 }
 
 struct FileInfo {
 	name string
 	size int
 }
-
-/*
-import const (
-	SEEK_SET
-	SEEK_END
-	SA_SIGINFO
-	S_IFMT
-	S_IFDIR
-	SIGABRT
-	SIGFPE
-	SIGILL
-	SIGINT
-	SIGSEGV
-	SIGTERM
-)
-*/
 
 struct C.stat {
 	st_size int
@@ -85,9 +69,7 @@ fn C.ftell(fp voidptr) int
 fn C.getenv(byteptr) byteptr
 fn C.sigaction(int, voidptr, int)
 
-fn todo_remove(){}
-
-fn init_os_args(argc int, argv *byteptr) []string {
+fn init_os_args(argc int, argv &byteptr) []string {
 	mut args := []string
 	$if windows {
 		mut args_list := &voidptr(0)
@@ -308,7 +290,7 @@ pub fn (f File) close() {
 
 // system starts the specified command, waits for it to complete, and returns its code.
 
-fn popen(path string) *FILE {
+fn popen(path string) &FILE {
 	$if windows {
 		mode := 'rb'
 		wpath := path.to_wide()
@@ -320,7 +302,7 @@ fn popen(path string) *FILE {
 	}
 }
 
-fn pclose(f *FILE) int {
+fn pclose(f &FILE) int {
 	$if windows {
 		return C._pclose(f)
 	}

@@ -115,7 +115,7 @@ fn (p mut Parser) comp_time() {
 			os.rm('.vwebtmpl.v')
 		}
 		pp.is_vweb = true
-		pp.cur_fn = p.cur_fn // give access too all variables in current function
+		pp.set_current_fn( p.cur_fn ) // give access too all variables in current function
 		pp.parse(.main)
 		tmpl_fn_body := p.cgen.lines.slice(pos + 2, p.cgen.lines.len).join('\n').clone()
 		end_pos := tmpl_fn_body.last_index('Builder_str( sb )')  + 19 // TODO
@@ -141,44 +141,11 @@ fn (p mut Parser) chash() {
 	is_sig := p.is_sig()
 	if hash.starts_with('flag ') {
 		mut flag := hash.right(5)
-		// No the right os? Skip!
-		// mut ok := true
-		if hash.contains('linux') && p.os != .linux {
-			return
-		}
-		else if hash.contains('darwin') && p.os != .mac {
-			return
-		}
-		else if hash.contains('windows') && (p.os != .windows && p.os != .msvc) {
-			return
-		}
-		// Remove "linux" etc from flag
-		if flag.contains('linux') || flag.contains('darwin') || flag.contains('windows') {
-			pos := flag.index(' ')
-			flag = flag.right(pos)
-		}
-		has_vroot := flag.contains('@VROOT')
-		flag = flag.trim_space().replace('@VROOT', p.vroot)
-		if p.table.flags.contains(flag) {
-			return
-		}
-		// expand `@VMOD/pg/pg.o` to absolute path
-		has_vmod := flag.contains('@VMOD')
-		flag = flag.trim_space().replace('@VMOD', ModPath)
-		if p.table.flags.contains(flag) {
-			return
-		}
+		// expand `@VROOT` `@VMOD` to absolute path
+		flag = flag.replace('@VROOT', p.vroot)
+		flag = flag.replace('@VMOD', ModPath)
 		p.log('adding flag "$flag"')
-		// `@VROOT/thirdparty/glad/glad.o`, make sure it exists, otherwise build it
-		if (has_vroot || has_vmod) && flag.contains('.o') {
-			if p.os == .msvc {
-				build_thirdparty_obj_file_with_msvc(flag)
-			}
-			else {
-				build_thirdparty_obj_file(flag)
-			}
-		}
-		p.table.flags << flag
+		p.table.parse_cflag(flag)
 		return
 	}
 	if hash.starts_with('include') {
@@ -242,8 +209,9 @@ fn (p mut Parser) comptime_method_call(typ Type) {
 	}
 }
 
-fn (p mut Parser) gen_array_str(typ mut Type) {
-	typ.add_method(Fn{
+fn (p mut Parser) gen_array_str(typ Type) {
+	//println('gen array str "$typ.name"')
+	p.table.add_method(typ.name, Fn{
 		name: 'str',
 		typ: 'string'
 		args: [Var{typ: typ.name, is_arg:true}]
@@ -251,9 +219,17 @@ fn (p mut Parser) gen_array_str(typ mut Type) {
 		is_public: true
 		receiver_typ: typ.name
 	})
+	/*
+	tt := p.table.find_type(typ.name)
+	for m in tt.methods {
+		println(m.name + ' ' + m.typ)
+		}
+		*/
 	t := typ.name
 	elm_type := t.right(6)
-	if p.typ_to_fmt(elm_type, 0) == '' && !p.table.type_has_method(p.table.find_type(elm_type), 'str') {
+	elm_type2 := p.table.find_type(elm_type)
+	if p.typ_to_fmt(elm_type, 0) == '' &&
+		!p.table.type_has_method(elm_type2, 'str') {
 		p.error('cant print ${elm_type}[], unhandled print of ${elm_type}')
 	}
 	p.cgen.fns << '
