@@ -27,8 +27,16 @@ pub fn ptr_str(ptr voidptr) string {
 
 // compare floats using C epsilon
 pub fn (a f64) eq(b f64) bool {
-	//return C.fabs(a - b) <= C.DBL_EPSILON	
-	return (a - b) <= C.DBL_EPSILON	
+	return C.fabs(a - b) <= C.DBL_EPSILON	
+}
+pub fn (a f32) eq(b f32) bool {
+	return C.fabsf(a - b) <= C.FLT_EPSILON	
+}
+pub fn (a f64) eqbit(b f64) bool {
+	return C.DEFAULT_EQUAL(a, b)
+}
+pub fn (a f32) eqbit(b f32) bool {
+	return C.DEFAULT_EQUAL(a, b)
 }
 
 // fn (nn i32) str() string {
@@ -171,7 +179,7 @@ pub fn (n i64) hex() string {
 		19
 	}
 	hex := malloc(len)
-	count := int(C.sprintf(*char(hex), '0x%llx', n))
+	count := int(C.sprintf(*char(hex), '0x%lx', n))
 	return tos(hex, count)
 }
 
@@ -213,7 +221,7 @@ pub fn (c byte) is_capital() bool {
 }
 
 pub fn (b []byte) clone() []byte {
-	mut res := [byte(0)].repeat2(b.len)
+	mut res := [byte(0)].repeat(b.len)
 	for i := 0; i < b.len; i++ {
 		res[i] = b[i]
 	}

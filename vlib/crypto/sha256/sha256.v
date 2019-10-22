@@ -74,7 +74,7 @@ fn (d mut Digest) reset() {
 		d.h[7] = u32(Init7_224)
 	}
 	d.nx = 0
-	d.len = u64(0)
+	d.len = 0
 }
 
 // new returns a new Digest (implementing hash.Hash) computing the SHA256 checksum.
@@ -124,20 +124,21 @@ fn (d mut Digest) write(p_ []byte) ?int {
 	return nn
 }
 
-fn (d &Digest) sum(b_in mut []byte) []byte {
+fn (d &Digest) sum(b_in []byte) []byte {
 	// Make a copy of d so that caller can keep writing and summing.
 	mut d0 := *d
 	hash := d0.checksum()
+	mut b_out := b_in.clone()
 	if d0.is224 {
 		for b in hash.left(Size224) {
-			b_in << b
+			b_out << b
 		}
 	} else {
 		for b in hash {
-			b_in << b
+			b_out << b
 		}
 	}
-	return *b_in
+	return b_out
 }
 
 fn (d mut Digest) checksum() []byte {

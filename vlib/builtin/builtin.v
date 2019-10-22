@@ -4,6 +4,12 @@
 
 module builtin
 
+fn C.memcpy(byteptr, byteptr, int)
+fn C.memmove(byteptr, byteptr, int)
+//fn C.malloc(int) byteptr
+fn C.realloc(byteptr, int) byteptr
+
+
 pub fn exit(code int) {
 	C.exit(code)
 }
@@ -32,7 +38,7 @@ pub fn print_backtrace_skipping_top_frames(skipframes int) {
 			if C.backtrace_symbols_fd != 0 {
 				buffer := [100]byteptr
 				nr_ptrs := C.backtrace(*voidptr(buffer), 100)
-				C.backtrace_symbols_fd(&buffer[skipframes], nr_ptrs-skipframes, 1)
+				C.backtrace_symbols_fd(*voidptr(&buffer[skipframes]), nr_ptrs-skipframes, 1)
 				return
 			}else{
 				C.printf('backtrace_symbols_fd is missing, so printing backtraces is not available.\n')
@@ -85,14 +91,19 @@ pub fn println(s string) {
 pub fn eprintln(s string) {
 	if isnil(s.str) {
 		panic('eprintln(NIL)')
-	}
+	}  
 	$if mac {
 		C.fprintf(stderr, '%.*s\n', s.len, s.str)
-	}
+		C.fflush(stderr)
+		return 
+	} 
+	$if linux {
+		C.fprintf(stderr, '%.*s\n', s.len, s.str)
+		C.fflush(stderr)
+		return
+	}  
 	// TODO issues with stderr and cross compiling for Linux
-	$else {
-		println(s)
-	}
+	println(s)
 }
 
 pub fn print(s string) {

@@ -8,6 +8,21 @@ fn test_const() {
 	assert b == true
 	assert a == 3
 	assert u == u64(1)
+	assert u == 1 // make sure this works without the cast
+}
+
+fn test_float_equal_operator() {
+	mut a := f32(1)
+	a += 0.000001
+	a -= 0.000001
+	assert a == 1
+	assert !a.eqbit(1)
+
+	a = f64(1)
+	a += 0.000001
+	a -= 0.000001
+	assert a == 1
+	assert !a.eqbit(1)
 }
 
 fn test_str_methods() {

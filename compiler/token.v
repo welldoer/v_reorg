@@ -68,6 +68,7 @@ enum Token {
 	nl
 	dot
 	dotdot
+	ellipsis
 	// keywords
 	keyword_beg
 	key_as
@@ -125,7 +126,7 @@ fn build_keys() map[string]int {
 
 // TODO remove once we have `enum Token { name('name') if('if') ... }`
 fn build_token_str() []string {
-	mut s := [''].repeat2(NrTokens)
+	mut s := [''].repeat(NrTokens)
 	s[Token.keyword_beg] = ''
 	s[Token.keyword_end] = ''
 	s[Token.eof] = 'eof'
@@ -150,6 +151,7 @@ fn build_token_str() []string {
 	s[Token.not] = '!'
 	s[Token.dot] = '.'
 	s[Token.dotdot] = '..'
+	s[Token.ellipsis] = '...'
 	s[Token.comma] = ','
 	//s[Token.at] = '@'
 	s[Token.semicolon] = ';'

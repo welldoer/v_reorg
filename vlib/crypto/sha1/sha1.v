@@ -48,7 +48,7 @@ fn (d mut Digest) reset() {
 	d.h[3] = u32(Init3)
 	d.h[4] = u32(Init4)
 	d.nx = 0
-	d.len = u64(0)
+	d.len = 0
 }
 
 // new returns a new Digest (implementing hash.Hash) computing the SHA1 checksum.
@@ -91,14 +91,15 @@ pub fn (d mut Digest) write(p_ []byte) ?int {
 	return nn
 }
 
-pub fn (d &Digest) sum(b_in mut []byte) []byte {
+pub fn (d &Digest) sum(b_in []byte) []byte {
 	// Make a copy of d so that caller can keep writing and summing.
 	mut d0 := *d
 	hash := d0.checksum()
+	mut b_out := b_in.clone()
 	for b in hash {
-		b_in << b
+		b_out << b
 	}
-	return *b_in
+	return b_out
 }
 
 fn (d mut Digest) checksum() []byte {
@@ -115,7 +116,7 @@ fn (d mut Digest) checksum() []byte {
 	}
 
 	// Length in bits.
-	len <<= u64(3)
+	len <<= 3
 	binary.big_endian_put_u64(mut tmp, len)
 	d.write(tmp.left(8))
 
