@@ -276,6 +276,7 @@ fn test_arr_contains() {
 fn test_to_num() {
 	s := '7'
 	assert s.int() == 7
+	assert s.u64() == 7
 	f := '71.5 hasdf'
 	assert f.f32() == 71.5
 	b := 1.52345
@@ -285,6 +286,9 @@ fn test_to_num() {
 	a = '${num:03d}'
 	vals := ['9']
 	assert vals[0].int() == 9
+	big := '93993993939322'
+	assert big.u64() == 93993993939322
+	assert big.i64() == 93993993939322
 }
 
 fn test_hash() {
@@ -464,3 +468,17 @@ fn test_repeat() {
 	s := 'V! '
 	assert s.repeat(5) == 'V! V! V! V! V! '
 }
+
+fn test_raw() {
+	raw := r'raw\nstring'
+	lines := raw.split('\n')
+	assert lines.len == 1
+	println('raw string: "$raw"')
+}	
+
+fn test_escape() {
+	// TODO
+	//a := 10
+	//println("\"$a")
+}	
+

@@ -57,6 +57,8 @@ make
 
 That's it! Now you have a V executable at `[path to V repo]/v`. `[path to V repo]` can be anywhere.
 
+(On Windows `make` means running `make.bat`, so make sure you use `cmd.exe`.)
+
 V is being constantly updated. To update V, simply run
 
 ```
@@ -68,7 +70,7 @@ v up
 
 You'll need Clang or GCC or Visual Studio. If you are doing development, you most likely already have one of those installed.
 
-Otherwise follow these instructions:
+Otherwise, follow these instructions:
 
 [https://github.com/vlang/v/wiki/Installing-a-C-compiler-on-Linux-macOS](https://github.com/vlang/v/wiki/Installing-a-C-compiler-on-Linux-macOS)
 
@@ -79,7 +81,7 @@ Otherwise follow these instructions:
 
 You can create a `/usr/local/bin/v` symlink so that V is globally available:
 
-```
+```bash
 sudo ./v symlink
 ```
 
@@ -101,10 +103,10 @@ v
 Make sure V can compile itself:
 
 ```
-v -o v compiler
+v v.v
 ```
 
-```
+```bash
 $ v
 V 0.1.x
 Use Ctrl-C or `exit` to exit
@@ -115,7 +117,7 @@ hello world
 ```
 
 
-```
+```bash
 cd examples
 v hello_world.v && ./hello_world    # or simply
 v run hello_world.v                 # this builds the program and runs it right away
@@ -155,7 +157,7 @@ glfw dependency will be removed soon.
 
 [examples/hello_v_js.v](examples/hello_v_js.v):
 
-```
+```v
 fn main() {
         for i := 0; i < 3; i++ {
                 println('Hello from V.js')
