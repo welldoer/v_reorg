@@ -476,6 +476,9 @@ fn (ctx mut Vid) draw_line(x, y int, line string) {
 			for i < line.len - 1 && line[i] != `\'` {
 				i++
 			}
+			if i >= line.len {
+				i = line.len - 1
+			}
 			ctx.add_chunk(STRING, start, i + 1)
 		}
 		// Key
@@ -716,7 +719,7 @@ fn (ctx mut Vid) key_insert(key int, super bool) {
 	case C.GLFW_KEY_TAB:
 		ctx.view.insert_text('\t')
 	}
-	if key == C.GLFW_KEY_L && super {
+	if (key == C.GLFW_KEY_L || key == C.GLFW_KEY_S) && super {
 		ctx.view.save_file()
 		ctx.mode = NORMAL
 		return
