@@ -189,6 +189,7 @@ fn main() {
 		font_size: ctx.font_size
 		use_ortho: true
 		retina: true
+		scale: 2
 	}
 	ctx.vg = gg.new_context(cfg)
 	ctx.ft = freetype.new_context(cfg)
