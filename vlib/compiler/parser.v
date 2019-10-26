@@ -2623,6 +2623,7 @@ fn (p mut Parser) assoc() string {
 		p.error('unknown variable `$name`')
 		exit(1)
 	}
+	p.mark_var_used(var)
 	p.check(.pipe)
 	p.gen('($var.typ){')
 	mut fields := []string// track the fields user is setting, the rest will be copied from the old object
@@ -2687,7 +2688,7 @@ fn (p mut Parser) string_expr() {
 			p.gen("'$str'")
 		}
 		else if p.is_js {
-			p.gen('"$f"')
+			p.gen('tos("$f")')
 		}
 		else {
 			p.gen('tos3("$f")')
