@@ -41,6 +41,7 @@ const (
 	SEARCH = 1
 	CAM    = 2
 	OPEN   = 3
+	OPEN_WORKSPACE = 7
 	CTRLJ  = 4
 	TASK   = 5
 	GREP   = 6
@@ -128,6 +129,9 @@ fn main() {
 	else {
 		glfw.get_monitor_size()
 	}
+	if size.width < 1500 {
+		nr_splits = 2
+	}
 	//t := glfw.get_time()
 	mut ctx := &Vid {
 		win_width: size.width
@@ -137,7 +141,7 @@ fn main() {
 		cur_split: 0
 		mode: 0
 		//timer: timer
-		file_y_pos: map[string]int{}
+		file_y_pos: map[string]int
 		line_height: 20
 		char_width: 8
 		font_size: 13
@@ -181,20 +185,33 @@ fn main() {
 	}
 	w.onkeydown(key_down)
 	w.onchar(on_char)
-	// Open workspaces
+	// Open workspaces or a file
+	println(os.args)
 	cur_dir := os.getwd()
-	for i, arg in os.args {
-		if i == 0 {
-			continue
+	// Open a single text file
+	if os.args.len == 2 && !os.is_dir(os.args[1]) {
+		if !os.file_exists(os.args[1]) {
+			path := os.args[1]
+			println('file "$path" does not exist')
+			exit(1)
 		}
-		if !arg.starts_with('-') {
-			ctx.add_workspace(cur_dir + '/' + arg)
-		}
-	}
-	if ctx.workspaces.len == 0 {
 		ctx.add_workspace(cur_dir)
+		ctx.open_workspace(0)
+		ctx.view.open_file(os.args[1])
+	} else {
+		for i, arg in os.args {
+			if i == 0 {
+				continue
+			}
+			if !arg.starts_with('-') {
+				ctx.add_workspace(cur_dir + '/' + arg)
+			}
+		}
+		if ctx.workspaces.len == 0 {
+			ctx.add_workspace(cur_dir)
+		}
+		ctx.open_workspace(0)
 	}
-	ctx.open_workspace(0)
 	ctx.load_session()
 	ctx.load_timer()
 	//println(int(glfw.get_time() -t))
@@ -901,7 +918,13 @@ fn (ctx mut Vid) key_normal(key int, super, shift bool) {
 			ctx.search(false)
 		}
 	case C.GLFW_KEY_O:
-		if super {
+		if shift && super {
+			println('RRRR')
+			ctx.mode = QUERY
+			ctx.query_type = OPEN_WORKSPACE
+			ctx.query = ''
+		}
+		else if super {
 			ctx.mode = QUERY
 			ctx.query_type = OPEN
 			ctx.query = ''
