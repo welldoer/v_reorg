@@ -1,6 +1,6 @@
-#define V_COMMIT_HASH "cba12d0"
+#define V_COMMIT_HASH "2d05c90"
 #ifndef V_COMMIT_HASH
-#define V_COMMIT_HASH "7de95a6"
+#define V_COMMIT_HASH "272b0ae"
 #endif
 
 #include <inttypes.h> // int64_t etc
@@ -155,6 +155,7 @@ int g_test_fails = 0;
 #include <time.h>
 typedef struct array array;
 typedef array array_string;
+typedef array array_bool;
 typedef array array_byte;
 typedef array array_int;
 typedef array array_char;
@@ -273,7 +274,6 @@ typedef Option Option_string;
 typedef Option Option_compiler__WindowsKit;
 typedef Option Option_compiler__VsInstallation;
 typedef Option Option_compiler__MsvcResult;
-typedef array array_bool;
 typedef int compiler__IndexType;
 typedef int compiler__NameCategory;
 typedef int compiler__AccessMod;
@@ -840,6 +840,7 @@ array array_reverse(array a);
 array array_clone(array a);
 void v_array_free(array a);
 string array_string_str(array_string a);
+string array_bool_str(array_bool a);
 string array_byte_hex(array_byte b);
 int copy(array_byte dst, array_byte src);
 int compare_ints(int *a, int *b);
@@ -848,12 +849,6 @@ int array_string_index(array_string a, string v);
 int array_int_index(array_int a, int v);
 int array_byte_index(array_byte a, byte v);
 int array_char_index(array_char a, char v);
-array_string array_string_filter2(
-    array_string a,
-    bool (*predicate)(string p_val, int p_i, array_string p_arr /*FFF*/));
-array_int array_int_filter2(array_int a,
-                            bool (*predicate)(int p_val, int p_i,
-                                              array_int p_arr /*FFF*/));
 int array_int_reduce(array_int a, int (*iter)(int accum, int curr /*FFF*/),
                      int accum_start);
 void builtin__init();
@@ -1342,6 +1337,8 @@ void compiler__Parser_gen_array_str(compiler__Parser *p, compiler__Type typ);
 void compiler__Parser_gen_struct_str(compiler__Parser *p, compiler__Type typ);
 void compiler__Parser_gen_array_filter(compiler__Parser *p, string str_typ,
                                        int method_ph);
+string compiler__Parser_gen_array_map(compiler__Parser *p, string str_typ,
+                                      int method_ph);
 void compiler__DepSet_add(compiler__DepSet *dset, string item);
 compiler__DepSet compiler__DepSet_diff(compiler__DepSet *dset,
                                        compiler__DepSet otherset);
@@ -2389,6 +2386,35 @@ string array_string_str(array_string a) {
 
   return strings__Builder_str(sb);
 }
+string array_bool_str(array_bool a) {
+
+  strings__Builder sb = strings__new_builder(a.len * 3);
+
+  strings__Builder_write(&/* ? */ sb, tos3("["));
+
+  for (int i = 0; i < a.len; i++) {
+
+    bool val = (*(bool *)array_get(a, i));
+
+    if (val) {
+
+      strings__Builder_write(&/* ? */ sb, tos3("true"));
+
+    } else {
+
+      strings__Builder_write(&/* ? */ sb, tos3("false"));
+    };
+
+    if (i < a.len - 1) {
+
+      strings__Builder_write(&/* ? */ sb, tos3(", "));
+    };
+  };
+
+  strings__Builder_write(&/* ? */ sb, tos3("]"));
+
+  return strings__Builder_str(sb);
+}
 string array_byte_hex(array_byte b) {
 
   byte *hex = v_malloc(b.len * 2 + 1);
@@ -2481,44 +2507,6 @@ int array_char_index(array_char a, char v) {
   };
 
   return -1;
-}
-array_string array_string_filter2(
-    array_string a,
-    bool (*predicate)(string p_val, int p_i, array_string p_arr /*FFF*/)) {
-
-  array_string res = new_array_from_c_array(
-      0, 0, sizeof(string), EMPTY_ARRAY_OF_ELEMS(string, 0){TCCSKIP(0)});
-
-  for (int i = 0; i < a.len; i++) {
-
-    if (predicate((*(string *)array_get(a, i)), i, a)) {
-
-      _PUSH(&res,
-            (/*typ = array_string   tmp_typ=string*/ (
-                *(string *)array_get(a, i))),
-            tmp48, string);
-    };
-  };
-
-  return res;
-}
-array_int array_int_filter2(array_int a,
-                            bool (*predicate)(int p_val, int p_i,
-                                              array_int p_arr /*FFF*/)) {
-
-  array_int res = new_array_from_c_array(
-      0, 0, sizeof(int), EMPTY_ARRAY_OF_ELEMS(int, 0){TCCSKIP(0)});
-
-  for (int i = 0; i < a.len; i++) {
-
-    if (predicate((*(int *)array_get(a, i)), i, a)) {
-
-      _PUSH(&res, (/*typ = array_int   tmp_typ=int*/ (*(int *)array_get(a, i))),
-            tmp55, int);
-    };
-  };
-
-  return res;
 }
 int array_int_reduce(array_int a, int (*iter)(int accum, int curr /*FFF*/),
                      int accum_start) {
@@ -6991,7 +6979,7 @@ string os__get_error_msg(int code) {
     return tos3("");
   };
 
-  return tos(_ptr_text, vstrlen(_ptr_text));
+  return string_from_wide(_ptr_text);
 }
 rand__Pcg32 rand__new_pcg32(u64 initstate, u64 initseq) {
 
@@ -10690,6 +10678,83 @@ void compiler__Parser_gen_array_filter(compiler__Parser *p, string str_typ,
   compiler__Parser_check(p, compiler__compiler__TokenKind_rpar);
 
   compiler__Parser_close_scope(p);
+}
+string compiler__Parser_gen_array_map(compiler__Parser *p, string str_typ,
+                                      int method_ph) {
+
+  string val_type = string_right(str_typ, 6);
+
+  compiler__Parser_open_scope(p);
+
+  compiler__Parser_register_var(
+      p, (compiler__Var){.name = tos3("it"),
+                         .typ = val_type,
+                         .idx = 0,
+                         .is_arg = 0,
+                         .is_const = 0,
+                         .args = new_array(0, 1, sizeof(compiler__Var)),
+                         .attr = tos3(""),
+                         .is_mut = 0,
+                         .is_alloc = 0,
+                         .is_returned = 0,
+                         .ptr = 0,
+                         .ref = 0,
+                         .parent_fn = tos3(""),
+                         .mod = tos3(""),
+                         .is_global = 0,
+                         .is_used = 0,
+                         .is_changed = 0,
+                         .scope_level = 0,
+                         .is_c = 0,
+                         .is_moved = 0,
+                         .line_nr = 0,
+                         .token_idx = 0,
+                         .is_for_var = 0,
+                         .is_public = 0});
+
+  compiler__Parser_next(p);
+
+  compiler__Parser_check(p, compiler__compiler__TokenKind_lpar);
+
+  compiler__CGen_resetln(p->cgen, tos3(""));
+
+  string tmp = compiler__Parser_get_tmp(p);
+
+  string tmp_elm = compiler__Parser_get_tmp(p);
+
+  string a = p->expr_var.name;
+
+  _V_MulRet_string_V_string _V_mret_map_type_expr =
+      compiler__Parser_tmp_expr(p);
+  string map_type = _V_mret_map_type_expr.var_0;
+  string expr = _V_mret_map_type_expr.var_1;
+
+  compiler__CGen_set_placeholder(
+      p->cgen, method_ph,
+      string_add(_STR("\narray %.*s = new_array(0, %.*s .len, ", tmp.len,
+                      tmp.str, a.len, a.str),
+                 _STR("sizeof(%.*s));\n", map_type.len, map_type.str)));
+
+  compiler__Parser_genln(
+      p, _STR("for (int i = 0; i < %.*s.len; i++) {", a.len, a.str));
+
+  compiler__Parser_genln(p, _STR("%.*s it = ((%.*s*)%.*s.data)[i];",
+                                 val_type.len, val_type.str, val_type.len,
+                                 val_type.str, a.len, a.str));
+
+  compiler__Parser_genln(p, _STR("_PUSH(&%.*s, %.*s, %.*s, %.*s)", tmp.len,
+                                 tmp.str, expr.len, expr.str, tmp_elm.len,
+                                 tmp_elm.str, map_type.len, map_type.str));
+
+  compiler__Parser_genln(p, tos3("}"));
+
+  compiler__Parser_gen(p, tmp);
+
+  compiler__Parser_check(p, compiler__compiler__TokenKind_rpar);
+
+  compiler__Parser_close_scope(p);
+
+  return string_add(tos3("array_"), map_type);
 }
 void compiler__DepSet_add(compiler__DepSet *dset, string item) {
 
@@ -21333,6 +21398,11 @@ string compiler__Parser_dot(compiler__Parser *p, string str_typ_,
     compiler__Parser_gen_array_filter(p, str_typ, method_ph);
 
     return str_typ;
+
+  } else if (string_eq(field_name, tos3("map")) &&
+             string_starts_with(str_typ, tos3("array_"))) {
+
+    return compiler__Parser_gen_array_map(p, str_typ, method_ph);
   };
 
   int fname_tidx = compiler__Parser_cur_tok_index(&/* ? */ *p);

@@ -259,6 +259,25 @@ pub fn (a []string) str() string {
 	return sb.str()
 }
 
+// "[true, true, false]"
+pub fn (a []bool) str() string {
+	mut sb := strings.new_builder(a.len * 3)
+	sb.write('[')
+	for i := 0; i < a.len; i++ {
+		val := a[i]
+		if val {
+			sb.write('true')
+		} else {
+			sb.write('false')
+		}	
+		if i < a.len - 1 {
+			sb.write(', ')
+		}
+	}
+	sb.write(']')
+	return sb.str()
+}
+
 pub fn (b []byte) hex() string {
 	mut hex := malloc(b.len*2+1)
 	mut ptr := &hex[0]
@@ -329,33 +348,6 @@ pub fn (a []char) index(v char) int {
 	}
 	return -1
 }
-
-////////////// FILTER //////////////
-
-// Creates a new array with all elements that pass the test implemented by the provided function.
-pub fn (a  []string) filter2(predicate fn(p_val string, p_i int, p_arr []string) bool) []string
-{
-	mut res := []string
-	for i := 0; i < a.len; i++  {
-		if predicate(a[i], i, a) {
-			res << a[i]
-		}
-	}
-	return res
-}
-
-pub fn (a []int) filter2(predicate fn(p_val, p_i int, p_arr []int) bool) []int
-{
-	mut res := []int
-	for i := 0; i < a.len; i++  {
-		if predicate(a[i], i, a) {
-			res << a[i]
-		}
-	}
-	return res
-}
-
-////////////// REDUCE //////////////
 
 // Executes a reducer function (that you provide) on each element of the array,
 // resulting in a single output value.
