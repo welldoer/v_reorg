@@ -2,9 +2,9 @@
 
 echo Building V
 
-if exist "vc" (
-    rd /s /q vc
-)
+REM if exist "vc" (
+REM     rd /s /q vc
+REM )
 
 git version
 
