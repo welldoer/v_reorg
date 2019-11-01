@@ -8,8 +8,8 @@ if exist "vc" (
 
 git version
 
-echo Downloading v.c...
-git clone --depth 1 --quiet https://github.com/vlang/vc
+REM echo Downloading v.c...
+REM git clone --depth 1 --quiet https://github.com/vlang/vc
 
 REM option to force msvc or gcc
 if "%~1"=="-gcc" goto :gccstrap
